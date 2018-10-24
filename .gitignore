@@ -105,3 +105,7 @@ venv.bak/
 /output
 /models
 /log
+.pylintrc
+.vscode
+lib/nms/cpu_nms.c
+lib/nms/gpu_nms.cpp
