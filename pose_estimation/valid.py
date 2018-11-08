@@ -118,6 +118,9 @@ def main():
         config, is_train=False
     )
 
+    gpus = [int(i) for i in config.GPUS.split(',')]
+    model = torch.nn.DataParallel(model, device_ids=gpus).cuda()
+
     if config.TEST.MODEL_FILE:
         logger.info('=> loading model from {}'.format(config.TEST.MODEL_FILE))
         model.load_state_dict(torch.load(config.TEST.MODEL_FILE))
@@ -126,9 +129,6 @@ def main():
                                         'final_state.pth.tar')
         logger.info('=> loading model from {}'.format(model_state_file))
         model.load_state_dict(torch.load(model_state_file))
-
-    gpus = [int(i) for i in config.GPUS.split(',')]
-    model = torch.nn.DataParallel(model, device_ids=gpus).cuda()
 
     # define loss function (criterion) and optimizer
     criterion = JointsMSELoss(
