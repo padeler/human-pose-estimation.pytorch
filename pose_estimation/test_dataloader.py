@@ -41,7 +41,7 @@ def run():
 
 
     # Data loading code
-    valid_dataset = dataset.coco(
+    valid_dataset = dataset.coco_sam(
         config,
         config.DATASET.ROOT,
         config.DATASET.TEST_SET,
@@ -71,11 +71,12 @@ def run():
         hm = np.squeeze(target.cpu().numpy()).transpose(1,2,0)
         hm_sum = np.sum(hm,axis=-1)
         hm_res = cv2.resize(hm_sum, (0,0),fx=4.,fy=4.)
-
         logger.info("Nose min/max %f %f", hm[...,0].min(),hm[...,0].max())
+        cv2.imshow("Hm sum",hm_res)
+
+        logger.info("Target shape: %s",target.shape)
 
         cv2.imshow("Input", img)
-        cv2.imshow("Hm sum",hm_res)
         k = cv2.waitKey(delay[paused])
         if k&0xFF==ord('q'):
             break
