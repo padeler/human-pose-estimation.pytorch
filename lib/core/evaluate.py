@@ -49,11 +49,17 @@ def accuracy(output, target, hm_type='gaussian', thr=0.5):
     norm = 1.0
     if hm_type == 'gaussian':
         pred, _ = get_max_preds(output)
-        target, _ = get_max_preds(target)
+        gt, _ = get_max_preds(target)
         h = output.shape[2]
         w = output.shape[3]
         norm = np.ones((pred.shape[0], 2)) * np.array([h, w]) / 10
-    dists = calc_dists(pred, target, norm)
+
+    if hm_type == 'sam':
+        pred = output
+        gt = target
+        norm = np.ones((pred.shape[0], 2))
+        
+    dists = calc_dists(pred, gt, norm)
 
     acc = np.zeros((len(idx) + 1))
     avg_acc = 0

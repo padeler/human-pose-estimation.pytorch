@@ -36,9 +36,60 @@ from utils.utils import create_logger
 
 import dataset
 import models
+import matplotlib
 
 import numpy as np
 import cv2
+
+from torch.nn import MSELoss
+
+# COCO parts
+coco_part_str = [u'nose', u'leye', u'reye', u'lear', u'rear', u'lsho', 
+                 u'rsho', u'lelb', u'relb', u'lwr', u'rwr', u'lhip', u'rhip', 
+                 u'lknee', u'rknee', u'lankle', u'rankle', u'bg']
+
+# visualize
+colors = [[255, 0, 0], [255, 85, 0], [255, 170, 0], [255, 255, 0], [170, 255, 0], [85, 255, 0],
+          [0, 255, 0],
+          [0, 255, 85], [0, 255, 170], [0, 255, 255], [0, 170, 255], [0, 85, 255], [0, 0, 255],
+          [85, 0, 255],
+          [170, 0, 255], [255, 0, 255], [255, 0, 170], [255, 0, 85]]
+
+
+def draw_peaks(canvas, pred, gt, part_str):
+    for i in range(len(part_str)):
+            x, y, v = pred[i]
+            if v>0.5:
+                cv2.circle(canvas, (int(x),int(y)), 4, colors[i], thickness=-1)
+                cv2.putText(canvas, part_str[i], (int(x),int(y)), 0, 0.5, colors[i])
+
+            x, y, v = gt[i]
+            if v>0.5:
+                cv2.circle(canvas, (int(x),int(y)), 2, [0,0,0], thickness=-1)
+
+    return canvas
+
+
+
+def calc_loss(criterion, output, target, target_weight):
+    batch_size = output.size(0)
+    num_joints = output.size(1)
+    heatmaps_pred = output.reshape((batch_size, num_joints, -1)).split(1, 1)
+    heatmaps_gt = target.reshape((batch_size, num_joints, -1)).split(1, 1)
+    loss = 0
+
+    for idx in range(num_joints):
+        heatmap_pred = heatmaps_pred[idx].squeeze()
+        heatmap_gt = heatmaps_gt[idx].squeeze()
+
+        loss += 0.5 * criterion(
+            heatmap_pred.mul(target_weight[:, idx]),
+            heatmap_gt.mul(target_weight[:, idx])
+        )
+
+    return loss / num_joints
+
+
 
 def main():
 
@@ -89,6 +140,8 @@ def main():
         pin_memory=True
     )
 
+    criterion = MSELoss(size_average=True)
+
     delay = {True:0,False:1}
     paused = True
 
@@ -97,9 +150,7 @@ def main():
 
     for i, (input, target, target_weight, meta) in enumerate(valid_loader):
         print("%d frame. Target Shape %s" % (i, target.shape), input.shape)
-        
-        
-        print()
+                
         img = input.cpu().numpy()[0,...]
 
         hm = target.cpu().numpy()[0,...].transpose(1,2,0)
@@ -109,14 +160,35 @@ def main():
         cv2.imshow("Hm sum",hm_res)
 
         # give heatmaps to model
+        weight_tensor = target_weight[...,:1]
         hm_in = torch.Tensor(target)
         print("hm_in shape",hm_in.shape)
         model_out = model(hm_in)
+        
 
-        out = model_out.numpy()
-        print("Out shape: ",out.shape)
-        print("Out[0,...]\n", out[0])
+        gt = meta['joints'][...,:2].float()
 
+        gt_sc = gt# / 4.0
+
+        pred = model_out.numpy()
+        y = gt_sc.numpy()
+        w = target_weight[...,:2].numpy()
+
+        nploss = np.mean(((pred-y)*w)**2) / 2.0
+        print("NP loss: ",nploss)
+        loss = calc_loss(criterion, model_out, gt_sc, weight_tensor)
+        print("BATCH LOSS: ",loss)
+
+        visible = target_weight.numpy()
+        out = model_out.numpy() #* 4.0
+        out = np.dstack((out,visible))
+        # print("Out shape: ",out.shape)
+        # print("Out[0,...]\n", out[0])
+        
+        
+        gt_vis = np.dstack((gt.numpy(),visible))
+
+        img = draw_peaks(np.copy(img),out[0],gt_vis[0],coco_part_str[:-1])
         cv2.imshow("Input", img)
         k = cv2.waitKey(delay[paused])
         if k&0xFF==ord('q'):

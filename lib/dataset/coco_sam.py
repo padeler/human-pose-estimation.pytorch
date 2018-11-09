@@ -79,22 +79,20 @@ class COCOSAMDataset(COCODataset):
 
         feat_stride = self.image_size / self.heatmap_size
         for joint_id in range(self.num_joints):
-            mu_x = int(joints[joint_id][0] / feat_stride[0] + 0.5)
-            mu_y = int(joints[joint_id][1] / feat_stride[1] + 0.5)
+            mu_x = joints[joint_id][0]# / feat_stride[0]
+            mu_y = joints[joint_id][1]# / feat_stride[1]
+            
             # XXX This check was for the gaussian. 
             # Maybe better handling if needed for almost out of view joint 
             # in the softargmax mode.
-            ul = [int(mu_x), int(mu_y)] 
-            br = [int(mu_x), int(mu_y)]
+            ul = [int(mu_x/feat_stride[0]), int(mu_y/feat_stride[1])] 
+            br = [int(mu_x/feat_stride[0]), int(mu_y/feat_stride[1])]
             if ul[0] >= self.heatmap_size[0] or ul[1] >= self.heatmap_size[1] \
                     or br[0] < 0 or br[1] < 0:
-                # If not, just return the image as is
+                # joint outside of image. set weight to 0
                 target_weight[joint_id] = 0
-            
-            v = target_weight[joint_id]
-            if v < 0.5:
                 mu_x = mu_y = 0
-            
+
             target[joint_id, :] = [mu_x, mu_y]
 
         return target, target_weight

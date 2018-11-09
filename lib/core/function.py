@@ -56,7 +56,7 @@ def train(config, train_loader, model, criterion, optimizer, epoch,
         losses.update(loss.item(), input.size(0))
 
         _, avg_acc, cnt, pred = accuracy(output.detach().cpu().numpy(),
-                                         target.detach().cpu().numpy())
+                                         target.detach().cpu().numpy(),hm_type=config.MODEL.EXTRA.TARGET_TYPE)
         acc.update(avg_acc, cnt)
 
         # measure elapsed time

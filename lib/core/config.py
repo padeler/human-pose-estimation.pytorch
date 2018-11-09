@@ -38,12 +38,26 @@ POSE_RESNET.NUM_DECONV_LAYERS = 3
 POSE_RESNET.NUM_DECONV_FILTERS = [256, 256, 256]
 POSE_RESNET.NUM_DECONV_KERNELS = [4, 4, 4]
 POSE_RESNET.FINAL_CONV_KERNEL = 1
-POSE_RESNET.TARGET_TYPE = 'gaussian'
 POSE_RESNET.HEATMAP_SIZE = [64, 64]  # width * height, ex: 24 * 32
+POSE_RESNET.TARGET_TYPE = 'gaussian'
 POSE_RESNET.SIGMA = 2
+
+# pose_resnet_sam related params
+POSE_RESNET_SAM = edict()
+POSE_RESNET_SAM.SAM_BETA = 1000
+POSE_RESNET_SAM.NUM_LAYERS = 50
+POSE_RESNET_SAM.DECONV_WITH_BIAS = False
+POSE_RESNET_SAM.NUM_DECONV_LAYERS = 3
+POSE_RESNET_SAM.NUM_DECONV_FILTERS = [256, 256, 256]
+POSE_RESNET_SAM.NUM_DECONV_KERNELS = [4, 4, 4]
+POSE_RESNET_SAM.FINAL_CONV_KERNEL = 1
+POSE_RESNET_SAM.HEATMAP_SIZE = [64, 64]  # width * height, ex: 24 * 32
+POSE_RESNET_SAM.TARGET_TYPE = 'sam'
+POSE_RESNET_SAM.SIGMA = 2
 
 MODEL_EXTRAS = {
     'pose_resnet': POSE_RESNET,
+    'pose_resnet_sam': POSE_RESNET_SAM,
 }
 
 # common params for NETWORK
@@ -204,7 +218,7 @@ def get_model_name(cfg):
     name = cfg.MODEL.NAME
     full_name = cfg.MODEL.NAME
     extra = cfg.MODEL.EXTRA
-    if name in ['pose_resnet']:
+    if name in ['pose_resnet','pose_resnet_sam']:
         name = '{model}_{num_layers}'.format(
             model=name,
             num_layers=extra.NUM_LAYERS)
