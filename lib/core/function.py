@@ -135,7 +135,8 @@ def validate(config, val_loader, val_dataset, model, criterion, output_dir,
             # measure accuracy and record loss
             losses.update(loss.item(), num_images)
             _, avg_acc, cnt, pred = accuracy(output.cpu().numpy(),
-                                             target.cpu().numpy())
+                                             target.cpu().numpy(),
+                                             hm_type=config.MODEL.EXTRA.TARGET_TYPE)
 
             acc.update(avg_acc, cnt)
 
