@@ -56,10 +56,10 @@ class PoseResNetSam(pose_resnet.PoseResNet):
         
 
     def forward(self, x):
-        x = super().forward(x)
-        x = self._sam(x)
+        hm = super().forward(x)
+        coords = self._sam(hm)
 
-        return x
+        return coords, hm
 
 
 def get_pose_net(cfg, is_train, **kwargs):

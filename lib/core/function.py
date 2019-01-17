@@ -41,11 +41,11 @@ def train(config, train_loader, model, criterion, optimizer, epoch,
         data_time.update(time.time() - end)
 
         # compute output
-        output = model(input)
+        coords, hm = model(input)
         target = target.cuda(non_blocking=True)
         target_weight = target_weight.cuda(non_blocking=True)
 
-        loss = criterion(output, target, target_weight)
+        loss = criterion(coords, target, target_weight)
 
         # compute gradient and do update step
         optimizer.zero_grad()
@@ -55,7 +55,7 @@ def train(config, train_loader, model, criterion, optimizer, epoch,
         # measure accuracy and record loss
         losses.update(loss.item(), input.size(0))
 
-        _, avg_acc, cnt, pred = accuracy(output.detach().cpu().numpy(),
+        _, avg_acc, cnt, pred = accuracy(coords.detach().cpu().numpy(),
                                          target.detach().cpu().numpy(),hm_type=config.MODEL.EXTRA.TARGET_TYPE)
         acc.update(avg_acc, cnt)
 
@@ -82,7 +82,7 @@ def train(config, train_loader, model, criterion, optimizer, epoch,
             writer_dict['train_global_steps'] = global_steps + 1
 
             prefix = '{}_{}'.format(os.path.join(output_dir, 'train'), i)
-            save_debug_images(config, input, meta, target, pred*4, output,
+            save_debug_images(config, input, meta, target, pred*4, hm,
                               prefix)
 
 
@@ -107,34 +107,35 @@ def validate(config, val_loader, val_dataset, model, criterion, output_dir,
         end = time.time()
         for i, (input, target, target_weight, meta) in enumerate(val_loader):
             # compute output
-            output = model(input)
+            coords, hm = model(input)
             if config.TEST.FLIP_TEST:
                 # this part is ugly, because pytorch has not supported negative index
                 # input_flipped = model(input[:, :, :, ::-1])
                 input_flipped = np.flip(input.cpu().numpy(), 3).copy()
-                input_flipped = torch.from_numpy(input_flipped).cuda()
-                output_flipped = model(input_flipped)
-                output_flipped = flip_back(output_flipped.cpu().numpy(),
-                                           val_dataset.flip_pairs)
-                output_flipped = torch.from_numpy(output_flipped.copy()).cuda()
+                ##### TODO fix flip_test for SAM ####
+                # input_flipped = torch.from_numpy(input_flipped).cuda()
+                # output_flipped = model(input_flipped)
+                # output_flipped = flip_back(output_flipped.cpu().numpy(),
+                #                            val_dataset.flip_pairs)
+                # output_flipped = torch.from_numpy(output_flipped.copy()).cuda()
 
-                # feature is not aligned, shift flipped heatmap for higher accuracy
-                if config.TEST.SHIFT_HEATMAP:
-                    output_flipped[:, :, :, 1:] = \
-                        output_flipped.clone()[:, :, :, 0:-1]
-                    # output_flipped[:, :, :, 0] = 0
+                # # feature is not aligned, shift flipped heatmap for higher accuracy
+                # if config.TEST.SHIFT_HEATMAP:
+                #     output_flipped[:, :, :, 1:] = \
+                #         output_flipped.clone()[:, :, :, 0:-1]
+                #     # output_flipped[:, :, :, 0] = 0
 
-                output = (output + output_flipped) * 0.5
+                # output = (output + output_flipped) * 0.5
 
             target = target.cuda(non_blocking=True)
             target_weight = target_weight.cuda(non_blocking=True)
 
-            loss = criterion(output, target, target_weight)
+            loss = criterion(coords, target, target_weight)
 
             num_images = input.size(0)
             # measure accuracy and record loss
             losses.update(loss.item(), num_images)
-            _, avg_acc, cnt, pred = accuracy(output.cpu().numpy(),
+            _, avg_acc, cnt, pred = accuracy(coords.cpu().numpy(),
                                              target.cpu().numpy(),
                                              hm_type=config.MODEL.EXTRA.TARGET_TYPE)
 
@@ -149,7 +150,7 @@ def validate(config, val_loader, val_dataset, model, criterion, output_dir,
             score = meta['score'].numpy()
 
             preds, maxvals = get_final_preds(
-                config, output.clone().cpu().numpy(), c, s)
+                config, coords.clone().cpu().numpy(), hm.clone().cpu().numpy(), c, s)
 
             all_preds[idx:idx + num_images, :, 0:2] = preds[:, :, 0:2]
             all_preds[idx:idx + num_images, :, 2:3] = maxvals
@@ -175,7 +176,7 @@ def validate(config, val_loader, val_dataset, model, criterion, output_dir,
                 logger.info(msg)
 
                 prefix = '{}_{}'.format(os.path.join(output_dir, 'val'), i)
-                save_debug_images(config, input, meta, target, pred*4, output,
+                save_debug_images(config, input, meta, target, pred*4, hm,
                                   prefix)
 
         name_values, perf_indicator = val_dataset.evaluate(
