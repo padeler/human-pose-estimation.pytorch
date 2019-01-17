@@ -17,6 +17,20 @@ import cv2
 from core.inference import get_max_preds
 
 
+
+# COCO parts
+coco_part_str = [u'nose', u'leye', u'reye', u'lear', u'rear', u'lsho', 
+                 u'rsho', u'lelb', u'relb', u'lwr', u'rwr', u'lhip', u'rhip', 
+                 u'lknee', u'rknee', u'lankle', u'rankle', u'bg']
+
+# visualize
+colors = [[255, 0, 0], [255, 85, 0], [255, 170, 0], [255, 255, 0], [170, 255, 0], [85, 255, 0],
+          [0, 255, 0],
+          [0, 255, 85], [0, 255, 170], [0, 255, 255], [0, 170, 255], [0, 85, 255], [0, 0, 255],
+          [85, 0, 255],
+          [170, 0, 255], [255, 0, 255], [255, 0, 170], [255, 0, 85]]
+
+
 def save_batch_image_with_joints(batch_image, batch_joints, batch_joints_vis,
                                  file_name, nrow=8, padding=2):
     '''
@@ -42,11 +56,14 @@ def save_batch_image_with_joints(batch_image, batch_joints, batch_joints_vis,
             joints = batch_joints[k]
             joints_vis = batch_joints_vis[k]
 
-            for joint, joint_vis in zip(joints, joints_vis):
+            for idx, (joint, joint_vis) in enumerate(zip(joints, joints_vis)):
                 joint[0] = x * width + padding + joint[0]
                 joint[1] = y * height + padding + joint[1]
                 if joint_vis[0]:
-                    cv2.circle(ndarr, (int(joint[0]), int(joint[1])), 2, [255, 0, 0], 2)
+                    # cv2.circle(ndarr, (int(joint[0]), int(joint[1])), 2, [255, 0, 0], 2)
+                    cv2.circle(ndarr, (int(joint[0]), int(joint[1])), 3, colors[idx], thickness=-1)
+                    cv2.putText(ndarr, coco_part_str[idx], (int(joint[0]), int(joint[1])), 0, 0.4, colors[idx])
+
             k = k + 1
     cv2.imwrite(file_name, ndarr)
 

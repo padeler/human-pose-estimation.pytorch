@@ -53,25 +53,32 @@ def accuracy(output, target, hm_type='gaussian', thr=0.5):
         h = output.shape[2]
         w = output.shape[3]
         norm = np.ones((pred.shape[0], 2)) * np.array([h, w]) / 10
+        dists = calc_dists(pred, gt, norm)
+        acc = np.zeros((len(idx) + 1))
+        avg_acc = 0
+        cnt = 0
+
+        for i in range(len(idx)):
+            acc[i + 1] = dist_acc(dists[idx[i]])
+            if acc[i + 1] >= 0:
+                avg_acc = avg_acc + acc[i + 1]
+                cnt += 1
+
+        avg_acc = avg_acc / cnt if cnt != 0 else 0
+        if cnt != 0:
+            acc[0] = avg_acc
 
     if hm_type == 'sam':
         pred = output
         gt = target
-        norm = np.ones((pred.shape[0], 2))
-        
-    dists = calc_dists(pred, gt, norm)
+        dists = np.linalg.norm(pred-gt,axis=-1)
+        mdist = np.mean(dists,axis=0) # mean per joint distance
+        max_thre = 32 # == heatmap_height/2.0 TODO move this threshold to config file
+        cnt = np.count_nonzero(mdist>max_thre)
+        mdist[mdist>max_thre] = max_thre
+        mdist_norm = mdist / max_thre
+        acc = 1.0 - mdist_norm 
+        avg_acc = np.mean(acc)
+        acc = [avg_acc,] + list(acc) # PPP Convert to original function return format
 
-    acc = np.zeros((len(idx) + 1))
-    avg_acc = 0
-    cnt = 0
-
-    for i in range(len(idx)):
-        acc[i + 1] = dist_acc(dists[idx[i]])
-        if acc[i + 1] >= 0:
-            avg_acc = avg_acc + acc[i + 1]
-            cnt += 1
-
-    avg_acc = avg_acc / cnt if cnt != 0 else 0
-    if cnt != 0:
-        acc[0] = avg_acc
     return acc, avg_acc, cnt, pred

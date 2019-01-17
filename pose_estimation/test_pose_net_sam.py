@@ -57,15 +57,17 @@ colors = [[255, 0, 0], [255, 85, 0], [255, 170, 0], [255, 255, 0], [170, 255, 0]
 
 
 def draw_peaks(canvas, pred, gt, part_str):
+    # pred = np.round(pred,)
     for i in range(len(part_str)):
-            x, y, v = pred[i]
-            if v>0.5:
-                cv2.circle(canvas, (int(x),int(y)), 4, colors[i], thickness=-1)
-                cv2.putText(canvas, part_str[i], (int(x),int(y)), 0, 0.5, colors[i])
+        x, y, v = pred[i]
+        if v>0.5:
+            cv2.circle(canvas, (int(x),int(y)), 4, colors[i], thickness=-1)
+            cv2.putText(canvas, part_str[i], (int(x),int(y)), 0, 0.5, colors[i])
 
-            x, y, v = gt[i]
-            if v>0.5:
-                cv2.circle(canvas, (int(x),int(y)), 2, [0,0,0], thickness=-1)
+        gx, gy, gv = gt[i]
+        print(i,v,"Pred ",x,y,"gt",gx,gy,gv)
+        if v>0.5:
+            cv2.circle(canvas, (int(gx),int(gy)), 2, [0,0,0], thickness=-1)
 
     return canvas
 
@@ -93,7 +95,7 @@ def calc_loss(criterion, output, target, target_weight):
 
 def main():
 
-    update_config("experiments/coco/resnet50/256x192_d256x3_sam_adam_lr1e-3.yaml")
+    update_config("experiments/coco/resnet50/256x192_d256x3_sam_adam_test.yaml")
 
     # cudnn related setting
     cudnn.benchmark = config.CUDNN.BENCHMARK
@@ -116,29 +118,45 @@ def main():
     # ).cuda()
 
     # Data loading code
-    # normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
-    #                                  std=[0.229, 0.224, 0.225])
+    normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                     std=[0.229, 0.224, 0.225])
 
-    # trans = transforms.Compose([
-    #         transforms.ToTensor(),
-    #         normalize,
-    #     ])
+    from dataset import coco,coco_sam 
 
-    valid_dataset = eval('dataset.'+config.DATASET.DATASET)(
+    valid_dataset = coco_sam(
         config,
         config.DATASET.ROOT,
         config.DATASET.TEST_SET,
         False, 
-        None # trans
-        )
+        transforms.Compose([
+            transforms.ToTensor(),
+            normalize,
+        ])
+    )
 
     valid_loader = torch.utils.data.DataLoader(
         valid_dataset,
         batch_size=config.TEST.BATCH_SIZE,
         shuffle=False,
-        num_workers=config.WORKERS,
+        # num_workers=config.WORKERS,
         pin_memory=True
     )
+
+    # train_dataset = coco(
+    #     config,
+    #     config.DATASET.ROOT,
+    #     config.DATASET.TRAIN_SET,
+    #     True,
+    #     None
+    # )
+
+    # train_loader = torch.utils.data.DataLoader(
+    #     train_dataset,
+    #     batch_size=config.TRAIN.BATCH_SIZE,
+    #     shuffle=config.TRAIN.SHUFFLE,
+    #     # num_workers=config.WORKERS,
+    #     pin_memory=True
+    # )
 
     criterion = MSELoss(size_average=True)
 
@@ -147,30 +165,32 @@ def main():
 
     k = 0
     idx = 0
+    cv2.namedWindow("foo")
 
     for i, (input, target, target_weight, meta) in enumerate(valid_loader):
         print("%d frame. Target Shape %s" % (i, target.shape), input.shape)
                 
         img = input.cpu().numpy()[0,...]
 
-        hm = target.cpu().numpy()[0,...].transpose(1,2,0)
-        hm_sum = np.sum(hm,axis=-1)
-        hm_res = cv2.resize(hm_sum, (0,0),fx=4.,fy=4.)
-        print("Nose min/max %f %f"%(hm[...,0].min(),hm[...,0].max()))
-        cv2.imshow("Hm sum",hm_res)
+        # hm = target.cpu().numpy()[0,...].transpose(1,2,0)
+        # hm_sum = np.sum(hm,axis=-1)
+        # hm_res = cv2.resize(hm_sum, (0,0),fx=4.,fy=4.)
+        # print("Nose min/max %f %f"%(hm[...,0].min(),hm[...,0].max()))
+        # cv2.imshow("Hm sum",hm_res)
+
+        weight_tensor = target_weight[...,:1]
 
         # give heatmaps to model
-        weight_tensor = target_weight[...,:1]
-        hm_in = torch.Tensor(target)
-        print("hm_in shape",hm_in.shape)
-        model_out = model(hm_in)
+        # hm_in = torch.Tensor(target)
+        # print("hm_in shape",hm_in.shape)
+        model_out = model(input)
         
 
         gt = meta['joints'][...,:2].float()
-
         gt_sc = gt# / 4.0
 
-        pred = model_out.numpy()
+        pred = model_out.detach().numpy()
+        print("Pred:",pred.shape,"\n",pred[0])
         y = gt_sc.numpy()
         w = target_weight[...,:2].numpy()
 
@@ -179,17 +199,16 @@ def main():
         loss = calc_loss(criterion, model_out, gt_sc, weight_tensor)
         print("BATCH LOSS: ",loss)
 
-        visible = target_weight.numpy()
-        out = model_out.numpy() #* 4.0
-        out = np.dstack((out,visible))
+        # visible = target_weight.numpy()
+        # out = model_out.numpy() #* 4.0
+        # out = np.dstack((out,visible))
         # print("Out shape: ",out.shape)
         # print("Out[0,...]\n", out[0])
         
         
-        gt_vis = np.dstack((gt.numpy(),visible))
-
-        img = draw_peaks(np.copy(img),out[0],gt_vis[0],coco_part_str[:-1])
-        cv2.imshow("Input", img)
+        # gt_vis = np.dstack((gt.numpy(),visible))
+        # img = draw_peaks(np.copy(img),out[0],gt_vis[0],coco_part_str[:-1])
+        # cv2.imshow("Input", img)
         k = cv2.waitKey(delay[paused])
         if k&0xFF==ord('q'):
             break

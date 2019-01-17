@@ -46,29 +46,36 @@ def get_max_preds(batch_heatmaps):
     return preds, maxvals
 
 
-def get_final_preds(config, batch_heatmaps, center, scale):
-    coords, maxvals = get_max_preds(batch_heatmaps)
+def get_final_preds(config, model_out, center, scale):
 
-    heatmap_height = batch_heatmaps.shape[2]
-    heatmap_width = batch_heatmaps.shape[3]
+    heatmap_width, heatmap_height = config.MODEL.EXTRA.HEATMAP_SIZE
 
-    # post-processing
-    if config.TEST.POST_PROCESS:
-        for n in range(coords.shape[0]):
-            for p in range(coords.shape[1]):
-                hm = batch_heatmaps[n][p]
-                px = int(math.floor(coords[n][p][0] + 0.5))
-                py = int(math.floor(coords[n][p][1] + 0.5))
-                if 1 < px < heatmap_width-1 and 1 < py < heatmap_height-1:
-                    diff = np.array([hm[py][px+1] - hm[py][px-1],
-                                     hm[py+1][px]-hm[py-1][px]])
-                    coords[n][p] += np.sign(diff) * .25
+    if config.MODEL.EXTRA.TARGET_TYPE=="gaussian":
+        batch_heatmaps = model_out
+        coords, maxvals = get_max_preds(batch_heatmaps)
+        
+        # post-processing
+        if config.TEST.POST_PROCESS:
+            for n in range(coords.shape[0]):
+                for p in range(coords.shape[1]):
+                    hm = batch_heatmaps[n][p]
+                    px = int(math.floor(coords[n][p][0] + 0.5))
+                    py = int(math.floor(coords[n][p][1] + 0.5))
+                    if 1 < px < heatmap_width-1 and 1 < py < heatmap_height-1:
+                        diff = np.array([hm[py][px+1] - hm[py][px-1],
+                                        hm[py+1][px]-hm[py-1][px]])
+                        coords[n][p] += np.sign(diff) * .25
 
-    preds = coords.copy()
+        preds = coords.copy()
+
+    else:
+        preds = coords = model_out
+        maxvals = np.ones(preds.shape[:2])[...,np.newaxis]
 
     # Transform back
     for i in range(coords.shape[0]):
         preds[i] = transform_preds(coords[i], center[i], scale[i],
-                                   [heatmap_width, heatmap_height])
+                                [heatmap_width, heatmap_height])
+
 
     return preds, maxvals

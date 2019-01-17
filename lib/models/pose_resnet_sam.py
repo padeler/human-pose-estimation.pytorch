@@ -16,7 +16,6 @@ import torch.nn as nn
 
 from models import pose_resnet
 
-BN_MOMENTUM = 0.1
 logger = logging.getLogger(__name__)
 
 class SAM(nn.Module):
@@ -30,8 +29,8 @@ class SAM(nn.Module):
     def forward(self, x):
         bs, joints, H, W = [int(v) for v in x.shape]
 
-        iy = torch.arange(start=0,end=H*4.0,step=4).float().view((1,1,H,1))
-        ix = torch.arange(start=0,end=W*4.0,step=4).float().view((1,1,1,W))
+        iy = torch.arange(start=0,end=H,step=1).float().view((1,1,H,1))
+        ix = torch.arange(start=0,end=W,step=1).float().view((1,1,1,W))
         if x.is_cuda:
             ix = ix.cuda()
             iy = iy.cuda()

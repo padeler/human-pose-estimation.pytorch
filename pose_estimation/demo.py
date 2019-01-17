@@ -115,8 +115,8 @@ def main():
     cudnn.benchmark = config.CUDNN.BENCHMARK
     torch.backends.cudnn.deterministic = config.CUDNN.DETERMINISTIC
     torch.backends.cudnn.enabled = config.CUDNN.ENABLED
-    model = models.pose_resnet.get_pose_net(config, is_train=False)
-    # model = eval('models.'+config.MODEL.NAME+'.get_pose_net')( config, is_train=False )
+    # model = models.pose_resnet.get_pose_net(config, is_train=False)
+    model = eval('models.'+config.MODEL.NAME+'.get_pose_net')( config, is_train=False )
 
     gpus = [int(i) for i in config.GPUS.split(',')]
     model = torch.nn.DataParallel(model, device_ids=gpus).cuda()

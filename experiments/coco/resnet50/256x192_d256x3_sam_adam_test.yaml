@@ -6,7 +6,7 @@ WORKERS: 4
 PRINT_FREQ: 100
 
 DATASET:
-  DATASET: 'coco'
+  DATASET: 'coco_sam'
   ROOT: 'data/coco/'
   TEST_SET: 'val2017'
   TRAIN_SET: 'train2017'
@@ -14,14 +14,14 @@ DATASET:
   ROT_FACTOR: 40
   SCALE_FACTOR: 0.3
 MODEL:
-  NAME: 'pose_resnet'
+  NAME: 'pose_resnet_sam'
   PRETRAINED: 'models/pytorch/imagenet/resnet50-19c8e357.pth'
   IMAGE_SIZE:
   - 192
   - 256
   NUM_JOINTS: 17
   EXTRA:
-    TARGET_TYPE: 'gaussian'
+    TARGET_TYPE: 'sam'
     HEATMAP_SIZE:
     - 48
     - 64
@@ -38,6 +38,7 @@ MODEL:
     - 4
     - 4
     NUM_LAYERS: 50
+    SAM_BETA: 12
 LOSS:
   USE_TARGET_WEIGHT: true
 TRAIN:
@@ -45,9 +46,9 @@ TRAIN:
   SHUFFLE: true
   BEGIN_EPOCH: 0
   END_EPOCH: 140
-  RESUME: true
+  RESUME: false
   OPTIMIZER: 'adam'
-  LR: 0.001
+  LR: 0.0001
   LR_FACTOR: 0.1
   LR_STEP:
   - 90
@@ -72,5 +73,5 @@ DEBUG:
   DEBUG: true
   SAVE_BATCH_IMAGES_GT: true
   SAVE_BATCH_IMAGES_PRED: true
-  SAVE_HEATMAPS_GT: true
-  SAVE_HEATMAPS_PRED: true
+  SAVE_HEATMAPS_GT: false
+  SAVE_HEATMAPS_PRED: false

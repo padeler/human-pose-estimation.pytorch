@@ -75,24 +75,19 @@ class COCOSAMDataset(COCODataset):
         target_weight[:, 0] = joints_vis[:, 0]
         
         target = np.zeros((self.num_joints, 2), dtype=np.float32)
-        # target[:,:] = joints[:,:2]
 
-        feat_stride = self.image_size / self.heatmap_size
+        feat_stride = self.image_size[0] / self.heatmap_size[0]
         for joint_id in range(self.num_joints):
-            mu_x = joints[joint_id][0]# / feat_stride[0]
-            mu_y = joints[joint_id][1]# / feat_stride[1]
-            
-            # XXX This check was for the gaussian. 
-            # Maybe better handling if needed for almost out of view joint 
-            # in the softargmax mode.
-            ul = [int(mu_x/feat_stride[0]), int(mu_y/feat_stride[1])] 
-            br = [int(mu_x/feat_stride[0]), int(mu_y/feat_stride[1])]
-            if ul[0] >= self.heatmap_size[0] or ul[1] >= self.heatmap_size[1] \
-                    or br[0] < 0 or br[1] < 0:
-                # joint outside of image. set weight to 0
-                target_weight[joint_id] = 0
-                mu_x = mu_y = 0
+            if target_weight[joint_id]==1:
+                mu_x, mu_y = joints[joint_id][:2]
 
-            target[joint_id, :] = [mu_x, mu_y]
+                # XXX This check was for the gaussian. 
+                # Maybe better handling if needed for almost out of view joint 
+                # in the softargmax mode.
+                if mu_x<0 or mu_y<0 or mu_x>=self.image_width or mu_y>=self.image_height:
+                    # joint outside of image. set weight to 0
+                    target_weight[joint_id] = 0
+                else:
+                    target[joint_id, :] = [mu_x/feat_stride, mu_y/feat_stride]
 
         return target, target_weight

@@ -29,6 +29,25 @@ import dataset
 
 from valid import parse_args, reset_config
 
+# visualize
+colors = [[255,255,255], 
+          [255, 0, 0], [255, 60, 0], [255, 120, 0], [255, 180, 0],
+          [0, 255, 0], [60, 255, 0], [120, 255, 0], [180, 255, 0],
+          [0, 255, 0], [0, 255, 60], [0, 255, 120], [0, 255, 180],
+          [0, 0, 255], [0, 60, 255], [0, 120, 255], [0, 180, 255],
+          [0, 0, 255], [60, 0, 255], [120, 0, 255], [180, 0, 255],]
+
+
+def viz_joints(canvas, joints, txt_size=0.5):
+    for i, p in enumerate(joints):
+        x,y,v = int(p[0]), int(p[1]), int(p[2])
+        if v==1:    
+            cv2.circle(canvas, (x,y), 4, colors[i%len(colors)], thickness=1)
+            if txt_size>0:
+                cv2.putText(canvas, str(i), (x+5,y), 0, txt_size, colors[i%len(colors)])
+
+    return canvas
+
 def run():
     
     args = parse_args()
@@ -67,15 +86,22 @@ def run():
         logger.info("%d frame. Meta: %s", i, meta)
         
         img = np.squeeze(input.cpu().numpy())
+        logger.info("Img Shape %s",img.shape)
 
-        hm = np.squeeze(target.cpu().numpy()).transpose(1,2,0)
-        hm_sum = np.sum(hm,axis=-1)
-        hm_res = cv2.resize(hm_sum, (0,0),fx=4.,fy=4.)
-        logger.info("Nose min/max %f %f", hm[...,0].min(),hm[...,0].max())
-        cv2.imshow("Hm sum",hm_res)
+        # hm = np.squeeze(target.cpu().numpy()).transpose(1,2,0)
+        # hm_sum = np.sum(hm,axis=-1)
+        # hm_res = cv2.resize(hm_sum, (0,0),fx=4.,fy=4.)
+        # logger.info("Nose min/max %f %f", hm[...,0].min(),hm[...,0].max())
+        # cv2.imshow("Hm sum",hm_res)
 
         logger.info("Target shape: %s",target.shape)
-
+        logger.info("Target shape: %s",target)
+        tw = target_weight.cpu().numpy()
+        logger.info("Target Weights shape: %s",tw.shape)
+        
+        joints = np.hstack((target.cpu().numpy().squeeze(),tw[0]))
+        print("Joints: \n",joints)
+        img = viz_joints(img, joints)
         cv2.imshow("Input", img)
         k = cv2.waitKey(delay[paused])
         if k&0xFF==ord('q'):
