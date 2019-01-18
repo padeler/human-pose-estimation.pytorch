@@ -28,6 +28,7 @@ from core.config import update_dir
 from core.loss import JointsMSELoss
 from core.function import AverageMeter
 from utils.utils import create_logger
+from utils import vis
 
 import dataset
 import models
@@ -63,36 +64,54 @@ def validate_demo(config, model, preproc):
 
         cap = cv2.VideoCapture(0)
         cap.set(cv2.CAP_PROP_BRIGHTNESS, 0.3)
+        idx = 0 
         while k&0xFF != ord('q'):
             ret, frame = cap.read()
             if not ret:
                 raise Exception("VideoCapture.read() returned False")
             
 
-            boxsize = 512
-            im = np.zeros((boxsize,boxsize,3),dtype=np.uint8)
-            sc = boxsize/max(frame.shape[0:2])
+            # boxsize = list(config.MODEL.IMAGE_SIZE[::-1]) # height,width
+            boxsize = [512,384] # 2*train size for 192x256 net.
+            im = np.zeros(boxsize+[3,],dtype=np.uint8)
+            sc = boxsize[0]/frame.shape[0]
             frame_sc = cv2.resize(frame,(0,0),fx=sc,fy=sc)
             h,w = frame_sc.shape[:2]
-            im[:h,:w] = frame_sc
+            w = min(w,boxsize[1])
+            # print("IM ",im.shape," to ",frame_sc.shape)
+            im[:h,:w] = frame_sc[:h,:w]
 
             before = time.time()
             
             # compute output
             tensor = preproc(im)
             batch = tensor.reshape([1,]+list(tensor.shape))
-            output = model(batch)
-            result = output.cpu().numpy()
+            coords, hm = model(batch)
+            coords = np.squeeze(coords.cpu().numpy())
+            hm = hm.cpu().numpy()
 
             dt = time.time()-before
             print("Time to result ",dt,"FPS",(1./dt))
 
-            heatmaps = np.squeeze(result).transpose(1,2,0)
+            heatmaps = np.squeeze(hm).transpose(1,2,0)
+            coords *= 4.0
+            # print("Heatmaps ===>",heatmaps.shape,heatmaps.dtype)
 
-            print("Heatmaps ===>",heatmaps.shape,heatmaps.dtype)
-            hm = np.sum(heatmaps, axis=-1)
+
+            print("COORDS",coords.shape,"\n",coords)
+            coords = np.hstack((coords, np.ones((17,1))))
+            im = vis.draw_coords(im, coords, part_str = vis.coco_part_str)
             cv2.imshow("Source", im)
-            cv2.imshow("Heatmaps",hm)
+
+            sel_hm = heatmaps[...,idx]
+ 
+            print("HM ",idx, "min, max, mean, median:", np.min(sel_hm),np.max(sel_hm),np.mean(sel_hm),np.median(sel_hm))
+            cv2.imshow("Heatmap",cv2.normalize(sel_hm,None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8UC1))
+
+            mhm = np.copy(sel_hm)
+            mhm[mhm<0] = 0 
+            cv2.imshow("Masked Heatmap",cv2.normalize(mhm,None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8UC1))
+
 
 
             k = cv2.waitKey(delay[paused])
@@ -100,6 +119,11 @@ def validate_demo(config, model, preproc):
                 break
             if k&0xFF==ord('p'):
                 paused = not paused
+            if k&0xFF==ord('n'):
+                idx += 1
+                idx = idx%heatmaps.shape[2]
+                print("Showing heatmap idx",idx)
+
 
 
 def main():

@@ -89,8 +89,12 @@ def main():
     torch.backends.cudnn.deterministic = config.CUDNN.DETERMINISTIC
     torch.backends.cudnn.enabled = config.CUDNN.ENABLED
 
+    best_perf = 0.0
+    best_model = False
+
+
     model = eval('models.'+config.MODEL.NAME+'.get_pose_net')(
-        config, is_train=True
+        config, is_train=(config.TRAIN.RESUME==False)
     )
 
     # copy model file
@@ -114,12 +118,23 @@ def main():
     gpus = [int(i) for i in config.GPUS.split(',')]
     model = torch.nn.DataParallel(model, device_ids=gpus).cuda()
 
+    optimizer = get_optimizer(config, model)
+
+    if config.TRAIN.RESUME:
+        checkpoint_file = final_output_dir+os.sep+"checkpoint.pth.tar"
+        logger.info('=> loading from checkpoint {}'.format(checkpoint_file))
+        chkpt_dict = torch.load(checkpoint_file)
+        
+        model.load_state_dict(chkpt_dict['state_dict']) # model state
+        optimizer.load_state_dict(chkpt_dict['optimizer'])  # optimizer state
+
+        config.TRAIN.BEGIN_EPOCH = chkpt_dict['epoch']
+        best_perf = chkpt_dict['perf']
+
     # define loss function (criterion) and optimizer
     criterion = JointsMSELoss(
         use_target_weight=config.LOSS.USE_TARGET_WEIGHT
     ).cuda()
-
-    optimizer = get_optimizer(config, model)
 
     lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(
         optimizer, config.TRAIN.LR_STEP, config.TRAIN.LR_FACTOR
@@ -164,8 +179,6 @@ def main():
         pin_memory=True
     )
 
-    best_perf = 0.0
-    best_model = False
     for epoch in range(config.TRAIN.BEGIN_EPOCH, config.TRAIN.END_EPOCH):
         lr_scheduler.step()
 
