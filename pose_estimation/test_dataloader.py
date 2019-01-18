@@ -63,8 +63,7 @@ def run():
     valid_dataset = dataset.coco_sam(
         config,
         config.DATASET.ROOT,
-        config.DATASET.TEST_SET,
-        False, None)
+        config.DATASET.TEST_SET, True, None)
 
     valid_loader = torch.utils.data.DataLoader(
         valid_dataset,
@@ -99,7 +98,7 @@ def run():
         tw = target_weight.cpu().numpy()
         logger.info("Target Weights shape: %s",tw.shape)
         
-        joints = np.hstack((target.cpu().numpy().squeeze(),tw[0]))
+        joints = np.hstack((target.cpu().numpy().squeeze()*4.0,tw[0]))
         print("Joints: \n",joints)
         img = viz_joints(img, joints)
         cv2.imshow("Input", img)

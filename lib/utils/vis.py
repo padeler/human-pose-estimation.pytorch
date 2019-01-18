@@ -31,6 +31,25 @@ colors = [[255, 0, 0], [255, 85, 0], [255, 170, 0], [255, 255, 0], [170, 255, 0]
           [170, 0, 255], [255, 0, 255], [255, 0, 170], [255, 0, 85]]
 
 
+
+def draw_coords(canvas, pred, gt=None, part_str=None):
+    for i,(x,y,v) in enumerate(pred):
+
+        if v>0:
+            cv2.circle(canvas, (int(x),int(y)), 4, colors[i], thickness=-1)
+            cv2.circle(canvas, (int(x),int(y)), 1, [0,0,0], thickness=2)
+
+        if v>0 and gt is not None:
+            gx, gy, _ = gt[i]
+            cv2.circle(canvas, (int(gx),int(gy)), 3, colors[i], thickness=-1)
+            if part_str is not None:
+                cv2.putText(canvas, part_str[i], (int(gx),int(gy)), 0, 0.5, colors[i])
+
+            print(i,v,"Pred ",x,y,"gt",gx,gy)
+
+    return canvas
+
+
 def save_batch_image_with_joints(batch_image, batch_joints, batch_joints_vis,
                                  file_name, nrow=8, padding=2):
     '''

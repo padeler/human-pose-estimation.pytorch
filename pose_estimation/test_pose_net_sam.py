@@ -34,6 +34,8 @@ from utils.utils import get_optimizer
 from utils.utils import save_checkpoint
 from utils.utils import create_logger
 
+from utils.vis import draw_coords, coco_part_str
+
 import dataset
 import models
 import matplotlib
@@ -43,33 +45,6 @@ import cv2
 
 from torch.nn import MSELoss
 
-# COCO parts
-coco_part_str = [u'nose', u'leye', u'reye', u'lear', u'rear', u'lsho', 
-                 u'rsho', u'lelb', u'relb', u'lwr', u'rwr', u'lhip', u'rhip', 
-                 u'lknee', u'rknee', u'lankle', u'rankle', u'bg']
-
-# visualize
-colors = [[255, 0, 0], [255, 85, 0], [255, 170, 0], [255, 255, 0], [170, 255, 0], [85, 255, 0],
-          [0, 255, 0],
-          [0, 255, 85], [0, 255, 170], [0, 255, 255], [0, 170, 255], [0, 85, 255], [0, 0, 255],
-          [85, 0, 255],
-          [170, 0, 255], [255, 0, 255], [255, 0, 170], [255, 0, 85]]
-
-
-def draw_peaks(canvas, pred, gt, part_str):
-    # pred = np.round(pred,)
-    for i in range(len(part_str)):
-        x, y, v = pred[i]
-        if v>0.5:
-            cv2.circle(canvas, (int(x),int(y)), 4, colors[i], thickness=-1)
-            cv2.putText(canvas, part_str[i], (int(x),int(y)), 0, 0.5, colors[i])
-
-        gx, gy, gv = gt[i]
-        print(i,v,"Pred ",x,y,"gt",gx,gy,gv)
-        if v>0.5:
-            cv2.circle(canvas, (int(gx),int(gy)), 2, [0,0,0], thickness=-1)
-
-    return canvas
 
 
 
@@ -92,7 +67,6 @@ def calc_loss(criterion, output, target, target_weight):
     return loss / num_joints
 
 
-
 def main():
 
     update_config("experiments/coco/resnet50/256x192_d256x3_sam_adam_test.yaml")
@@ -102,12 +76,20 @@ def main():
     torch.backends.cudnn.deterministic = config.CUDNN.DETERMINISTIC
     torch.backends.cudnn.enabled = config.CUDNN.ENABLED
 
-    model = models.pose_resnet_sam.get_pose_net( config, is_train=True )
 
-    dump_input = torch.rand((config.TRAIN.BATCH_SIZE,
-                             3,
-                             config.MODEL.IMAGE_SIZE[1],
-                             config.MODEL.IMAGE_SIZE[0]))
+    model = models.pose_resnet_sam.get_pose_net( config, is_train=False)
+
+    gpus = [int(i) for i in config.GPUS.split(',')]
+    model = torch.nn.DataParallel(model, device_ids=gpus).cuda()
+
+    if config.TEST.MODEL_FILE:
+        print('=> loading model from {}'.format(config.TEST.MODEL_FILE))
+        model.load_state_dict(torch.load(config.TEST.MODEL_FILE))
+
+    # dump_input = torch.rand((config.TRAIN.BATCH_SIZE,
+    #                          3,
+    #                          config.MODEL.IMAGE_SIZE[1],
+    #                          config.MODEL.IMAGE_SIZE[0]))
 
     # dump_out = model(dump_input)
     # print("Model out shape: ", dump_out.shape)
@@ -121,42 +103,29 @@ def main():
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                      std=[0.229, 0.224, 0.225])
 
-    from dataset import coco,coco_sam 
+    transform = transforms.Compose([
+            transforms.ToTensor(),
+            normalize,
+        ])
+
+
+    from dataset import coco_sam 
 
     valid_dataset = coco_sam(
         config,
         config.DATASET.ROOT,
         config.DATASET.TEST_SET,
         False, 
-        transforms.Compose([
-            transforms.ToTensor(),
-            normalize,
-        ])
+        None
     )
 
     valid_loader = torch.utils.data.DataLoader(
         valid_dataset,
-        batch_size=config.TEST.BATCH_SIZE,
+        batch_size=1,
         shuffle=False,
         # num_workers=config.WORKERS,
         pin_memory=True
     )
-
-    # train_dataset = coco(
-    #     config,
-    #     config.DATASET.ROOT,
-    #     config.DATASET.TRAIN_SET,
-    #     True,
-    #     None
-    # )
-
-    # train_loader = torch.utils.data.DataLoader(
-    #     train_dataset,
-    #     batch_size=config.TRAIN.BATCH_SIZE,
-    #     shuffle=config.TRAIN.SHUFFLE,
-    #     # num_workers=config.WORKERS,
-    #     pin_memory=True
-    # )
 
     criterion = MSELoss(size_average=True)
 
@@ -165,11 +134,12 @@ def main():
 
     k = 0
     idx = 0
-    cv2.namedWindow("foo")
+    # cv2.namedWindow("foo")
 
     for i, (input, target, target_weight, meta) in enumerate(valid_loader):
-        print("%d frame. Target Shape %s" % (i, target.shape), input.shape)
-                
+        print("%d frame. Target Shape %s" % (i, target.shape), input.shape, meta["image"])
+        
+
         img = input.cpu().numpy()[0,...]
 
         # hm = target.cpu().numpy()[0,...].transpose(1,2,0)
@@ -178,37 +148,33 @@ def main():
         # print("Nose min/max %f %f"%(hm[...,0].min(),hm[...,0].max()))
         # cv2.imshow("Hm sum",hm_res)
 
-        weight_tensor = target_weight[...,:1]
+        # weight_tensor = target_weight[...,:1]
 
         # give heatmaps to model
         # hm_in = torch.Tensor(target)
         # print("hm_in shape",hm_in.shape)
-        model_out = model(input)
+                    
+        coords, hm = model(transform(img).view(1, 3, 256, 192))
         
 
-        gt = meta['joints'][...,:2].float()
-        gt_sc = gt# / 4.0
-
-        pred = model_out.detach().numpy()
-        print("Pred:",pred.shape,"\n",pred[0])
-        y = gt_sc.numpy()
-        w = target_weight[...,:2].numpy()
+        gt = target.cpu().numpy()
+        pred = coords.detach().cpu().numpy()
+        # print("Pred:",pred.shape,"\n",pred[0],"\nGT\n",gt)
+        y = gt
+        w = target_weight[...,:2].cpu().numpy()
 
         nploss = np.mean(((pred-y)*w)**2) / 2.0
         print("NP loss: ",nploss)
-        loss = calc_loss(criterion, model_out, gt_sc, weight_tensor)
-        print("BATCH LOSS: ",loss)
+        # loss = calc_loss(criterion, pred, target.cpu().numpy(), w)
+        # print("BATCH LOSS: ",loss)
 
-        # visible = target_weight.numpy()
-        # out = model_out.numpy() #* 4.0
-        # out = np.dstack((out,visible))
-        # print("Out shape: ",out.shape)
-        # print("Out[0,...]\n", out[0])
+        visible = target_weight.cpu().numpy()
         
+        gt_vis = np.hstack((gt[0]*4.,visible[0]))
+        pred_vis = np.hstack((pred[0]*4., visible[0]))
         
-        # gt_vis = np.dstack((gt.numpy(),visible))
-        # img = draw_peaks(np.copy(img),out[0],gt_vis[0],coco_part_str[:-1])
-        # cv2.imshow("Input", img)
+        img = draw_coords(np.copy(img),pred_vis,gt_vis,coco_part_str[:-1])
+        cv2.imshow("Input", img)
         k = cv2.waitKey(delay[paused])
         if k&0xFF==ord('q'):
             break
