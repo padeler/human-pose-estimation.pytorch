@@ -60,7 +60,7 @@ def run():
 
 
     # Data loading code
-    valid_dataset = dataset.coco_sam(
+    valid_dataset = dataset.coco_fields(
         config,
         config.DATASET.ROOT,
         config.DATASET.TEST_SET, True, None)
@@ -69,7 +69,7 @@ def run():
         valid_dataset,
         batch_size=1,
         shuffle=False,
-        num_workers=config.WORKERS,
+        # num_workers=config.WORKERS,
         pin_memory=True
     )
 
@@ -87,20 +87,20 @@ def run():
         img = np.squeeze(input.cpu().numpy())
         logger.info("Img Shape %s",img.shape)
 
-        # hm = np.squeeze(target.cpu().numpy()).transpose(1,2,0)
-        # hm_sum = np.sum(hm,axis=-1)
-        # hm_res = cv2.resize(hm_sum, (0,0),fx=4.,fy=4.)
+        hm = np.squeeze(target.cpu().numpy()).transpose(1,2,0)
+        hm_sum = np.sum(hm,axis=-1)
+        hm_res = cv2.resize(hm_sum, (0,0),fx=4.,fy=4.)
         # logger.info("Nose min/max %f %f", hm[...,0].min(),hm[...,0].max())
-        # cv2.imshow("Hm sum",hm_res)
+        cv2.imshow("Hm sum",hm_res)
 
         logger.info("Target shape: %s",target.shape)
-        logger.info("Target shape: %s",target)
+        # logger.info("Target shape: %s",target)
         tw = target_weight.cpu().numpy()
         logger.info("Target Weights shape: %s",tw.shape)
         
-        joints = np.hstack((target.cpu().numpy().squeeze()*4.0,tw[0]))
-        print("Joints: \n",joints)
-        img = viz_joints(img, joints)
+        # joints = np.hstack((target.cpu().numpy().squeeze()*4.0,tw[0]))
+        # print("Joints: \n",joints)
+        # img = viz_joints(img, joints)
         cv2.imshow("Input", img)
         k = cv2.waitKey(delay[paused])
         if k&0xFF==ord('q'):

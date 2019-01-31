@@ -186,6 +186,7 @@ class COCODataset(JointsDataset):
                 'joints_3d_vis': joints_3d_vis,
                 'filename': '',
                 'imgnum': 0,
+                'img_index': index,
             })
 
         return rec
