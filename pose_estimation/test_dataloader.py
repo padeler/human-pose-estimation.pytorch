@@ -63,7 +63,7 @@ def run():
     valid_dataset = dataset.coco_fields(
         config,
         config.DATASET.ROOT,
-        config.DATASET.TEST_SET, True, None)
+        config.DATASET.TEST_SET, False, None)
 
     valid_loader = torch.utils.data.DataLoader(
         valid_dataset,
@@ -81,17 +81,42 @@ def run():
     idx = 0
     print("Validation demo loop.")
 
-    for i, (input, target, target_weight, meta) in enumerate(valid_loader):
-        logger.info("%d frame. Meta: %s", i, meta)
-        
+    for i, (input, target, target_fields, target_weight, meta) in enumerate(valid_loader):
+        # logger.info("%d frame. Meta: %s", i, meta)
+        logger.info("Image file %s",meta["image"])
+        logger.info("Center %s Scale %s",meta['center'], meta['scale'])
         img = np.squeeze(input.cpu().numpy())
-        logger.info("Img Shape %s",img.shape)
+        logger.info("Img %s %s",img.shape, img.dtype)
 
         hm = np.squeeze(target.cpu().numpy()).transpose(1,2,0)
         hm_sum = np.sum(hm,axis=-1)
         hm_res = cv2.resize(hm_sum, (0,0),fx=4.,fy=4.)
         # logger.info("Nose min/max %f %f", hm[...,0].min(),hm[...,0].max())
         cv2.imshow("Hm sum",hm_res)
+
+        logger.info("Fields shape %s",target_fields.shape)
+        fields = np.squeeze(target_fields.cpu().numpy()).transpose(1,2,0)
+
+        fl_b = np.sum(fields[:,:,0::2], axis=-1)
+        fl_g = np.sum(fields[:,:,1::2], axis=-1)
+        fl = np.dstack((fl_b, fl_g, np.zeros_like(fl_g)))
+        fl = cv2.resize(fl, (0,0),fx=4.,fy=4.)
+        # fl_norm = np.linalg.norm(fl,axis=-1)
+        fl_norm = cv2.normalize(fl, None, 0,255, cv2.NORM_MINMAX, cv2.CV_8UC1)
+        for idx, a in enumerate(meta['annotations']):
+            bc = a['barycenter']
+            print("Anno ",idx," bc ", bc)
+            if bc[2]>0:
+                c = (int(bc[0]*4.0),int(bc[1]*4.0))
+                cv2.circle(fl_norm, c, 3, [100,50,255], -1)
+                cv2.putText(fl_norm, str(idx), c, 0, 0.5, [200,100,50],2)
+
+        cv2.imshow("Fl Norm", fl_norm)
+
+        
+        overlay = np.copy(img).astype(np.float32)/255. + hm_res[...,np.newaxis]
+        overlay = cv2.normalize(overlay, None, 0,255,cv2.NORM_MINMAX, cv2.CV_8UC1)
+        cv2.imshow("Overlay" , overlay)
 
         logger.info("Target shape: %s",target.shape)
         # logger.info("Target shape: %s",target)
