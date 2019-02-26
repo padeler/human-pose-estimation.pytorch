@@ -36,3 +36,4 @@ class JointsMSELoss(nn.Module):
                 loss += 0.5 * self.criterion(heatmap_pred, heatmap_gt)
 
         return loss / num_joints
+        

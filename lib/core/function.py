@@ -36,17 +36,21 @@ def train(config, train_loader, model, criterion, optimizer, epoch,
     model.train()
 
     end = time.time()
-    for i, (input, target, target_weight, meta) in enumerate(train_loader):
+    for i, (input, target_joints, target_fields, target_weight, target_weight_fields, meta) in enumerate(train_loader):
         # measure data loading time
         data_time.update(time.time() - end)
 
         # compute output
-        output = model(input)
-        target = target.cuda(non_blocking=True)
-        target_weight = target_weight.cuda(non_blocking=True)
+        output_joints, output_fields = model(input)
+        target_joints = target_joints.cuda(non_blocking=True)
+        target_fields = target_fields.cuda(non_blocking=True)
+        target_weight_joints = target_weight.cuda(non_blocking=True)
+        target_weight_fields = target_weight_fields.cuda(non_blocking=True)
 
-        loss = criterion(output, target, target_weight)
 
+        loss_joints = criterion(output_joints, target_joints, target_weight_joints)
+        loss_fields = criterion(output_fields, target_fields, target_weight_fields)
+        loss = loss_joints# + loss_fields
         # compute gradient and do update step
         optimizer.zero_grad()
         loss.backward()
@@ -55,8 +59,8 @@ def train(config, train_loader, model, criterion, optimizer, epoch,
         # measure accuracy and record loss
         losses.update(loss.item(), input.size(0))
 
-        _, avg_acc, cnt, pred = accuracy(output.detach().cpu().numpy(),
-                                         target.detach().cpu().numpy(),hm_type=config.MODEL.EXTRA.TARGET_TYPE)
+        _, avg_acc, cnt, pred = accuracy(output_joints.detach().cpu().numpy(),
+                                         target_joints.detach().cpu().numpy(),hm_type=config.MODEL.EXTRA.TARGET_TYPE)
         acc.update(avg_acc, cnt)
 
         # measure elapsed time
@@ -82,7 +86,7 @@ def train(config, train_loader, model, criterion, optimizer, epoch,
             writer_dict['train_global_steps'] = global_steps + 1
 
             prefix = '{}_{}'.format(os.path.join(output_dir, 'train'), i)
-            save_debug_images(config, input, meta, target, pred*4, output,
+            save_debug_images(config, input, meta, target_joints, pred*4, output_joints,
                               prefix)
 
 
@@ -105,37 +109,42 @@ def validate(config, val_loader, val_dataset, model, criterion, output_dir,
     idx = 0
     with torch.no_grad():
         end = time.time()
-        for i, (input, target, target_weight, meta) in enumerate(val_loader):
+        for i, (input, target_joints, target_fields, target_weight, target_weight_fields, meta) in enumerate(val_loader):
             # compute output
-            output = model(input)
+            joints, fields = model(input)
             if config.TEST.FLIP_TEST:
                 # this part is ugly, because pytorch has not supported negative index
+                raise NotImplementedError("This is not implemented for pose_resnet_fields")
                 # input_flipped = model(input[:, :, :, ::-1])
-                input_flipped = np.flip(input.cpu().numpy(), 3).copy()
-                input_flipped = torch.from_numpy(input_flipped).cuda()
-                output_flipped = model(input_flipped)
-                output_flipped = flip_back(output_flipped.cpu().numpy(),
-                                           val_dataset.flip_pairs)
-                output_flipped = torch.from_numpy(output_flipped.copy()).cuda()
+                # input_flipped = np.flip(input.cpu().numpy(), 3).copy()
+                # input_flipped = torch.from_numpy(input_flipped).cuda()
+                # joints_flipped, fields_flipped = model(input_flipped)
+                # joints_flipped = flip_back(joints_flipped.cpu().numpy(),
+                #                            val_dataset.flip_pairs)
+                # output_flipped = torch.from_numpy(output_flipped.copy()).cuda()
 
-                # feature is not aligned, shift flipped heatmap for higher accuracy
-                if config.TEST.SHIFT_HEATMAP:
-                    output_flipped[:, :, :, 1:] = \
-                        output_flipped.clone()[:, :, :, 0:-1]
-                    # output_flipped[:, :, :, 0] = 0
+                # # feature is not aligned, shift flipped heatmap for higher accuracy
+                # if config.TEST.SHIFT_HEATMAP:
+                #     output_flipped[:, :, :, 1:] = \
+                #         output_flipped.clone()[:, :, :, 0:-1]
+                #     # output_flipped[:, :, :, 0] = 0
 
-                output = (output + output_flipped) * 0.5
+                # output = (output + output_flipped) * 0.5
 
-            target = target.cuda(non_blocking=True)
+            target_joints = target_joints.cuda(non_blocking=True)
+            target_fields = target_fields.cuda(non_blocking=True)
             target_weight = target_weight.cuda(non_blocking=True)
+            target_weight_fields = target_weight_fields.cuda(non_blocking=True)
 
-            loss = criterion(output, target, target_weight)
-
+            joints_loss = criterion(joints, target_joints, target_weight)
+            fields_loss = criterion(fields, target_fields, target_weight_fields)
+            loss = joints_loss # + fields_loss
+            
             num_images = input.size(0)
             # measure accuracy and record loss
             losses.update(loss.item(), num_images)
-            _, avg_acc, cnt, pred = accuracy(output.cpu().numpy(),
-                                             target.cpu().numpy(),
+            _, avg_acc, cnt, pred = accuracy(joints.cpu().numpy(),
+                                             target_joints.cpu().numpy(),
                                              hm_type=config.MODEL.EXTRA.TARGET_TYPE)
 
             acc.update(avg_acc, cnt)
@@ -144,24 +153,24 @@ def validate(config, val_loader, val_dataset, model, criterion, output_dir,
             batch_time.update(time.time() - end)
             end = time.time()
 
-            c = meta['center'].numpy()
-            s = meta['scale'].numpy()
-            score = meta['score'].numpy()
+            # c = meta['center'].numpy()
+            # s = meta['scale'].numpy()
+            # score = meta['score'].numpy()
 
-            preds, maxvals = get_final_preds(
-                config, output.clone().cpu().numpy(), c, s)
+            # preds, maxvals = get_final_preds(
+            #     config, output.clone().cpu().numpy(), c, s)
 
-            all_preds[idx:idx + num_images, :, 0:2] = preds[:, :, 0:2]
-            all_preds[idx:idx + num_images, :, 2:3] = maxvals
-            # double check this all_boxes parts
-            all_boxes[idx:idx + num_images, 0:2] = c[:, 0:2]
-            all_boxes[idx:idx + num_images, 2:4] = s[:, 0:2]
-            all_boxes[idx:idx + num_images, 4] = np.prod(s*200, 1)
-            all_boxes[idx:idx + num_images, 5] = score
-            image_path.extend(meta['image'])
-            if config.DATASET.DATASET == 'posetrack':
-                filenames.extend(meta['filename'])
-                imgnums.extend(meta['imgnum'].numpy())
+            # all_preds[idx:idx + num_images, :, 0:2] = preds[:, :, 0:2]
+            # all_preds[idx:idx + num_images, :, 2:3] = maxvals
+            # # double check this all_boxes parts
+            # all_boxes[idx:idx + num_images, 0:2] = c[:, 0:2]
+            # all_boxes[idx:idx + num_images, 2:4] = s[:, 0:2]
+            # all_boxes[idx:idx + num_images, 4] = np.prod(s*200, 1)
+            # all_boxes[idx:idx + num_images, 5] = score
+            # image_path.extend(meta['image'])
+            # if config.DATASET.DATASET == 'posetrack':
+            #     filenames.extend(meta['filename'])
+            #     imgnums.extend(meta['imgnum'].numpy())
 
             idx += num_images
 
@@ -175,32 +184,32 @@ def validate(config, val_loader, val_dataset, model, criterion, output_dir,
                 logger.info(msg)
 
                 prefix = '{}_{}'.format(os.path.join(output_dir, 'val'), i)
-                save_debug_images(config, input, meta, target, pred*4, output,
+                save_debug_images(config, input, meta, target_joints, pred*4, joints,
                                   prefix)
 
-        name_values, perf_indicator = val_dataset.evaluate(
-            config, all_preds, output_dir, all_boxes, image_path,
-            filenames, imgnums)
+        # name_values, perf_indicator = val_dataset.evaluate(
+        #     config, all_preds, output_dir, all_boxes, image_path,
+        #     filenames, imgnums)
 
-        _, full_arch_name = get_model_name(config)
-        if isinstance(name_values, list):
-            for name_value in name_values:
-                _print_name_value(name_value, full_arch_name)
-        else:
-            _print_name_value(name_values, full_arch_name)
+        # _, full_arch_name = get_model_name(config)
+        # if isinstance(name_values, list):
+        #     for name_value in name_values:
+        #         _print_name_value(name_value, full_arch_name)
+        # else:
+        #     _print_name_value(name_values, full_arch_name)
 
-        if writer_dict:
-            writer = writer_dict['writer']
-            global_steps = writer_dict['valid_global_steps']
-            writer.add_scalar('valid_loss', losses.avg, global_steps)
-            writer.add_scalar('valid_acc', acc.avg, global_steps)
-            if isinstance(name_values, list):
-                for name_value in name_values:
-                    writer.add_scalars('valid', dict(name_value), global_steps)
-            else:
-                writer.add_scalars('valid', dict(name_values), global_steps)
-            writer_dict['valid_global_steps'] = global_steps + 1
-
+        # if writer_dict:
+        #     writer = writer_dict['writer']
+        #     global_steps = writer_dict['valid_global_steps']
+        #     writer.add_scalar('valid_loss', losses.avg, global_steps)
+        #     writer.add_scalar('valid_acc', acc.avg, global_steps)
+        #     if isinstance(name_values, list):
+        #         for name_value in name_values:
+        #             writer.add_scalars('valid', dict(name_value), global_steps)
+        #     else:
+        #         writer.add_scalars('valid', dict(name_values), global_steps)
+        #     writer_dict['valid_global_steps'] = global_steps + 1
+    perf_indicator = 0 
     return perf_indicator
 
 

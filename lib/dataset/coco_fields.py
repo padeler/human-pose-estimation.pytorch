@@ -139,7 +139,7 @@ class COCOFieldsDataset(COCODataset):
         sel_ann = db_rec['annotations'][pos]
         c = sel_ann['center']
         s = sel_ann['scale']
-        s[0] = max(1.0,s[0]) # dont allow too match zoom in sumbjects
+        s[0] = max(1.0,s[0]) # dont allow too match zoom in suBjects
         s[1] = max(1.0,s[1])
 
         # XXX Full image 
@@ -173,7 +173,7 @@ class COCOFieldsDataset(COCODataset):
             joints = p['joints_3d']
 
             for i in range(self.num_joints):
-                if joints_vis[i, 0] > 0.0:
+                if joints_vis[i, 0] > 0.5:
                     joints[i, 0:2] = affine_transform(joints[i, 0:2], trans)
 
             annotations_meta.append({
@@ -181,11 +181,12 @@ class COCOFieldsDataset(COCODataset):
                 'joints_vis':joints_vis,
             })
 
-        target, target_fields, target_weight = self.generate_target(annotations_meta)
+        target, target_fields, target_weight, target_weight_fields = self.generate_target(annotations_meta)
 
         target = torch.from_numpy(target)
         target_fields = torch.from_numpy(target_fields)
         target_weight = torch.from_numpy(target_weight)
+        target_weight_fields = torch.from_numpy(target_weight_fields)
 
         meta = {
             'image': image_file,
@@ -196,7 +197,7 @@ class COCOFieldsDataset(COCODataset):
             'flip': flip,
         }
 
-        return input, target, target_fields, target_weight, meta
+        return input, target, target_fields, target_weight, target_weight_fields, meta
 
     def generate_heatmaps_for_annotation(self,p):
         joints = p['joints']
@@ -298,17 +299,17 @@ class COCOFieldsDataset(COCODataset):
                 # compute fields
                 fields = self.generate_fields_for_barycenter(barycenter, indices)
                 # mask fields using the heatmaps
-                hm_mask = heatmaps>0.6
+                hm_mask = heatmaps>0.25
                 for j in range(self.num_joints):
                     fields[2*j] *= hm_mask[j]
                     fields[2*j+1] *= hm_mask[j]
 
                 target_fields += fields
 
-
-
         target_weight[target_weight>0] = 1
-        return target, target_fields, target_weight
+        target_weight_fields = np.repeat(target_weight,2,axis=0)
+        
+        return target, target_fields, target_weight, target_weight_fields
 
 
     def generate_fields_for_barycenter(self, barycenter, indices_base):

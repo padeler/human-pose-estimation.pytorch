@@ -81,7 +81,7 @@ def run():
     idx = 0
     print("Validation demo loop.")
 
-    for i, (input, target, target_fields, target_weight, meta) in enumerate(valid_loader):
+    for i, (input, target, target_fields, target_weight, target_weight_fields, meta) in enumerate(valid_loader):
         # logger.info("%d frame. Meta: %s", i, meta)
         logger.info("Image file %s",meta["image"])
         logger.info("Center %s Scale %s",meta['center'], meta['scale'])
@@ -121,7 +121,11 @@ def run():
         logger.info("Target shape: %s",target.shape)
         # logger.info("Target shape: %s",target)
         tw = target_weight.cpu().numpy()
+        twf = target_weight_fields.cpu().numpy()
         logger.info("Target Weights shape: %s",tw.shape)
+        logger.info("Target Weights fields shape: %s",twf.shape)
+        print("TW",tw)
+        print("TWF: ",twf)
         
         # joints = np.hstack((target.cpu().numpy().squeeze()*4.0,tw[0]))
         # print("Joints: \n",joints)
