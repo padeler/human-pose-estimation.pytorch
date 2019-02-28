@@ -36,21 +36,18 @@ def train(config, train_loader, model, criterion, optimizer, epoch,
     model.train()
 
     end = time.time()
-    for i, (input, target_joints, target_fields, target_weight, target_weight_fields, meta) in enumerate(train_loader):
+    for i, (input, jointsbc, jointsbc_weight, meta) in enumerate(train_loader):
         # measure data loading time
         data_time.update(time.time() - end)
 
         # compute output
-        output_joints, output_fields = model(input)
-        target_joints = target_joints.cuda(non_blocking=True)
-        target_fields = target_fields.cuda(non_blocking=True)
-        target_weight_joints = target_weight.cuda(non_blocking=True)
-        target_weight_fields = target_weight_fields.cuda(non_blocking=True)
+        output = model(input)
+        jointsbc = jointsbc.cuda(non_blocking=True)
+        jointsbc_weight = jointsbc_weight.cuda(non_blocking=True)
 
 
-        loss_joints = criterion(output_joints, target_joints, target_weight_joints)
-        loss_fields = criterion(output_fields, target_fields, target_weight_fields)
-        loss = loss_joints# + loss_fields
+        loss = criterion(output, jointsbc, jointsbc_weight)
+
         # compute gradient and do update step
         optimizer.zero_grad()
         loss.backward()
@@ -59,8 +56,8 @@ def train(config, train_loader, model, criterion, optimizer, epoch,
         # measure accuracy and record loss
         losses.update(loss.item(), input.size(0))
 
-        _, avg_acc, cnt, pred = accuracy(output_joints.detach().cpu().numpy(),
-                                         target_joints.detach().cpu().numpy(),hm_type=config.MODEL.EXTRA.TARGET_TYPE)
+        _, avg_acc, cnt, pred = accuracy(output.detach().cpu().numpy(),
+                                         jointsbc.detach().cpu().numpy(),hm_type=config.MODEL.EXTRA.TARGET_TYPE)
         acc.update(avg_acc, cnt)
 
         # measure elapsed time
@@ -86,7 +83,7 @@ def train(config, train_loader, model, criterion, optimizer, epoch,
             writer_dict['train_global_steps'] = global_steps + 1
 
             prefix = '{}_{}'.format(os.path.join(output_dir, 'train'), i)
-            save_debug_images(config, input, meta, target_joints, pred*4, output_joints,
+            save_debug_images(config, input, meta, jointsbc, pred*4, output,
                               prefix)
 
 
@@ -109,12 +106,12 @@ def validate(config, val_loader, val_dataset, model, criterion, output_dir,
     idx = 0
     with torch.no_grad():
         end = time.time()
-        for i, (input, target_joints, target_fields, target_weight, target_weight_fields, meta) in enumerate(val_loader):
+        for i, (input, jointsbc, jointsbc_weight, meta) in enumerate(val_loader):
             # compute output
-            joints, fields = model(input)
+            output = model(input)
             if config.TEST.FLIP_TEST:
                 # this part is ugly, because pytorch has not supported negative index
-                raise NotImplementedError("This is not implemented for pose_resnet_fields")
+                raise NotImplementedError("This is not implemented for pose_resnet_bc")
                 # input_flipped = model(input[:, :, :, ::-1])
                 # input_flipped = np.flip(input.cpu().numpy(), 3).copy()
                 # input_flipped = torch.from_numpy(input_flipped).cuda()
@@ -131,20 +128,16 @@ def validate(config, val_loader, val_dataset, model, criterion, output_dir,
 
                 # output = (output + output_flipped) * 0.5
 
-            target_joints = target_joints.cuda(non_blocking=True)
-            target_fields = target_fields.cuda(non_blocking=True)
-            target_weight = target_weight.cuda(non_blocking=True)
-            target_weight_fields = target_weight_fields.cuda(non_blocking=True)
+            jointsbc = jointsbc.cuda(non_blocking=True)
+            jointsbc_weight = jointsbc_weight.cuda(non_blocking=True)
 
-            joints_loss = criterion(joints, target_joints, target_weight)
-            fields_loss = criterion(fields, target_fields, target_weight_fields)
-            loss = joints_loss # + fields_loss
+            loss = criterion(output, jointsbc, jointsbc_weight)
             
             num_images = input.size(0)
             # measure accuracy and record loss
             losses.update(loss.item(), num_images)
-            _, avg_acc, cnt, pred = accuracy(joints.cpu().numpy(),
-                                             target_joints.cpu().numpy(),
+            _, avg_acc, cnt, pred = accuracy(output.cpu().numpy(),
+                                             jointsbc.cpu().numpy(),
                                              hm_type=config.MODEL.EXTRA.TARGET_TYPE)
 
             acc.update(avg_acc, cnt)
@@ -184,7 +177,7 @@ def validate(config, val_loader, val_dataset, model, criterion, output_dir,
                 logger.info(msg)
 
                 prefix = '{}_{}'.format(os.path.join(output_dir, 'val'), i)
-                save_debug_images(config, input, meta, target_joints, pred*4, joints,
+                save_debug_images(config, input, meta, jointsbc, pred*4, output,
                                   prefix)
 
         # name_values, perf_indicator = val_dataset.evaluate(

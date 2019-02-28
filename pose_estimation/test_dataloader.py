@@ -60,7 +60,7 @@ def run():
 
 
     # Data loading code
-    valid_dataset = dataset.coco_fields(
+    valid_dataset = dataset.coco_bc(
         config,
         config.DATASET.ROOT,
         config.DATASET.TEST_SET, False, None)
@@ -81,7 +81,7 @@ def run():
     idx = 0
     print("Validation demo loop.")
 
-    for i, (input, target, target_fields, target_weight, target_weight_fields, meta) in enumerate(valid_loader):
+    for i, (input, target, target_weight, meta) in enumerate(valid_loader):
         # logger.info("%d frame. Meta: %s", i, meta)
         logger.info("Image file %s",meta["image"])
         logger.info("Center %s Scale %s",meta['center'], meta['scale'])
@@ -89,31 +89,27 @@ def run():
         logger.info("Img %s %s",img.shape, img.dtype)
 
         hm = np.squeeze(target.cpu().numpy()).transpose(1,2,0)
-        hm_sum = np.sum(hm,axis=-1)
+        hm_sum = np.sum(hm[...,:-1],axis=-1)
         hm_res = cv2.resize(hm_sum, (0,0),fx=4.,fy=4.)
         # logger.info("Nose min/max %f %f", hm[...,0].min(),hm[...,0].max())
         cv2.imshow("Hm sum",hm_res)
+        bc = hm[...,-1]
+        logger.info("BC shape %s",bc.shape)
 
-        logger.info("Fields shape %s",target_fields.shape)
-        fields = np.squeeze(target_fields.cpu().numpy()).transpose(1,2,0)
+        bc_res = cv2.resize(bc, (0,0),fx=4.,fy=4.)
 
-        fl_b = np.sum(fields[:,:,0::2], axis=-1)
-        fl_g = np.sum(fields[:,:,1::2], axis=-1)
-        fl = np.dstack((fl_b, fl_g, np.zeros_like(fl_g)))
-        fl = cv2.resize(fl, (0,0),fx=4.,fy=4.)
-        # fl_norm = np.linalg.norm(fl,axis=-1)
-        fl_norm = cv2.normalize(fl, None, 0,255, cv2.NORM_MINMAX, cv2.CV_8UC1)
+        bc_norm = cv2.normalize(bc_res, None, 0,255, cv2.NORM_MINMAX, cv2.CV_8UC1)
+        bc_norm = cv2.cvtColor(bc_norm, cv2.COLOR_GRAY2BGR)
         for idx, a in enumerate(meta['annotations']):
             bc = a['barycenter']
             print("Anno ",idx," bc ", bc)
             if bc[2]>0:
                 c = (int(bc[0]*4.0),int(bc[1]*4.0))
-                cv2.circle(fl_norm, c, 3, [100,50,255], -1)
-                cv2.putText(fl_norm, str(idx), c, 0, 0.5, [200,100,50],2)
+                cv2.circle(bc_norm, c, 3, [100,50,255], -1)
+                cv2.putText(bc_norm, str(idx), c, 0, 0.5, [200,100,50],2)
 
-        cv2.imshow("Fl Norm", fl_norm)
+        cv2.imshow("BC", bc_norm)
 
-        
         overlay = np.copy(img).astype(np.float32)/255. + hm_res[...,np.newaxis]
         overlay = cv2.normalize(overlay, None, 0,255,cv2.NORM_MINMAX, cv2.CV_8UC1)
         cv2.imshow("Overlay" , overlay)
@@ -121,11 +117,8 @@ def run():
         logger.info("Target shape: %s",target.shape)
         # logger.info("Target shape: %s",target)
         tw = target_weight.cpu().numpy()
-        twf = target_weight_fields.cpu().numpy()
         logger.info("Target Weights shape: %s",tw.shape)
-        logger.info("Target Weights fields shape: %s",twf.shape)
         print("TW",tw)
-        print("TWF: ",twf)
         
         # joints = np.hstack((target.cpu().numpy().squeeze()*4.0,tw[0]))
         # print("Joints: \n",joints)
