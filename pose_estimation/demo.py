@@ -53,26 +53,26 @@ def validate_demo(config, model, preproc):
     print("Validation demo loop.")
     with torch.no_grad():
 
-        # dataset_path = "/media/storage/home/padeler/work/datasets/coco_2017/val2017"
-        # val_set = glob.glob(dataset_path+os.sep+"*.jpg")
-        # val_set.sort()
-        # for fname in val_set:
-        #     if k&0xFF ==ord('q'):
-        #         break
-        #     image_id = int(os.path.os.path.basename(fname)[:-4])
-        #     frame = cv2.imread(fname)
+        dataset_path = "/media/storage/home/padeler/work/datasets/coco_2017/val2017"
+        val_set = glob.glob(dataset_path+os.sep+"*.jpg")
+        val_set.sort()
+        for fname in val_set:
+            if k&0xFF ==ord('q'):
+                break
+            image_id = int(os.path.os.path.basename(fname)[:-4])
+            frame = cv2.imread(fname)
 
-        cap = cv2.VideoCapture(0)
-        cap.set(cv2.CAP_PROP_BRIGHTNESS, 0.3)
-        idx = 0 
-        while k&0xFF != ord('q'):
-            ret, frame = cap.read()
-            if not ret:
-                raise Exception("VideoCapture.read() returned False")
+        # cap = cv2.VideoCapture(0)
+        # cap.set(cv2.CAP_PROP_BRIGHTNESS, 1.0)
+        # idx = 0 
+        # while k&0xFF != ord('q'):
+        #     ret, frame = cap.read()
+        #     if not ret:
+        #         raise Exception("VideoCapture.read() returned False")
             
 
             # boxsize = list(config.MODEL.IMAGE_SIZE[::-1]) # height,width
-            boxsize = [512,384] # 2*train size for 192x256 net.
+            boxsize = [256, 256]
             im = np.zeros(boxsize+[3,],dtype=np.uint8)
             sc = boxsize[0]/frame.shape[0]
             frame_sc = cv2.resize(frame,(0,0),fx=sc,fy=sc)
@@ -86,33 +86,31 @@ def validate_demo(config, model, preproc):
             # compute output
             tensor = preproc(im)
             batch = tensor.reshape([1,]+list(tensor.shape))
-            coords, hm = model(batch)
-            coords = np.squeeze(coords.cpu().numpy())
-            hm = hm.cpu().numpy()
+            pred = model(batch)
+            pred = np.squeeze(pred.cpu().numpy())
+            hm = pred[:-1,...]
+            bc = pred[-1,...]
 
             dt = time.time()-before
             print("Time to result ",dt,"FPS",(1./dt))
 
             heatmaps = np.squeeze(hm).transpose(1,2,0)
-            coords *= 4.0
-            # print("Heatmaps ===>",heatmaps.shape,heatmaps.dtype)
 
+            print("Heatmaps, bc ===>",heatmaps.shape,bc.shape)
 
-            print("COORDS",coords.shape,"\n",coords)
-            coords = np.hstack((coords, np.ones((17,1))))
-            im = vis.draw_coords(im, coords, part_str = vis.coco_part_str)
             cv2.imshow("Source", im)
 
             sel_hm = heatmaps[...,idx]
  
             print("HM ",idx, "min, max, mean, median:", np.min(sel_hm),np.max(sel_hm),np.mean(sel_hm),np.median(sel_hm))
-            cv2.imshow("Heatmap",cv2.normalize(sel_hm,None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8UC1))
+            cv2.imshow("Heatmap idx",cv2.normalize(sel_hm,None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8UC1))
+            
+            sum_hm = np.sum(heatmaps,axis=-1)
+            cv2.imshow("Heatmap sum",cv2.normalize(sum_hm,None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8UC1))
 
-            mhm = np.copy(sel_hm)
-            mhm[mhm<0] = 0 
-            cv2.imshow("Masked Heatmap",cv2.normalize(mhm,None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8UC1))
 
-
+            bc_res = cv2.resize(bc,(0,0),fx=4.0,fy=4.0)
+            cv2.imshow("Barycenters",cv2.normalize(bc_res,None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8UC1))
 
             k = cv2.waitKey(delay[paused])
             if k&0xFF==ord('q'):
@@ -139,7 +137,7 @@ def main():
     cudnn.benchmark = config.CUDNN.BENCHMARK
     torch.backends.cudnn.deterministic = config.CUDNN.DETERMINISTIC
     torch.backends.cudnn.enabled = config.CUDNN.ENABLED
-    # model = models.pose_resnet.get_pose_net(config, is_train=False)
+
     model = eval('models.'+config.MODEL.NAME+'.get_pose_net')( config, is_train=False )
 
     gpus = [int(i) for i in config.GPUS.split(',')]
@@ -147,7 +145,7 @@ def main():
 
     if config.TEST.MODEL_FILE:
         logger.info('=> loading model from {}'.format(config.TEST.MODEL_FILE))
-        model.load_state_dict(torch.load(config.TEST.MODEL_FILE))
+        model.load_state_dict(torch.load(config.TEST.MODEL_FILE)['state_dict'])
     else:
         model_state_file = os.path.join(final_output_dir, 'final_state.pth.tar')
         logger.info('=> loading model from {}'.format(model_state_file))
