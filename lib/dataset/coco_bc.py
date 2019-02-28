@@ -206,6 +206,10 @@ class COCOBCDataset(COCODataset):
         
         bc_x = bc_y = 0 # barycenter coords
         vis_joint_count = 0 # number of visible joints (for computing barycenter)
+
+        min_x = min_y = 2000.
+        max_x = max_y = -2000.
+
         
         target = np.zeros((self.num_joints,
                             self.heatmap_size[1],
@@ -229,8 +233,14 @@ class COCOBCDataset(COCODataset):
                 bc_x += mu_x
                 bc_y += mu_y
                 vis_joint_count += 1
+                
+                min_x = min(min_x, mu_x)
+                min_y = min(min_y, mu_y)
 
+                max_x = max(max_x, mu_x)
+                max_y = max(max_y, mu_y)
 
+                
                 # # Generate gaussian
                 size = 2 * tmp_size + 1
                 x = np.arange(0, size, 1, np.float32)
@@ -250,9 +260,12 @@ class COCOBCDataset(COCODataset):
                     g[g_y[0]:g_y[1], g_x[0]:g_x[1]]
         
         if vis_joint_count>0:
-            barycenter = [bc_x/vis_joint_count, bc_y/vis_joint_count,vis_joint_count]
+            dx = max(max_x - min_x,1) + 2 # bouding box has >=3pixels side on the net output
+            dy = max(max_y - min_y,1) + 2
+            
+            barycenter = [bc_x/vis_joint_count, bc_y/vis_joint_count,vis_joint_count, dx, dy]
         else:
-            barycenter = [0,0,0]
+            barycenter = [0, 0, 0, 0, 0]
 
         return target, jw, barycenter
 
@@ -276,40 +289,53 @@ class COCOBCDataset(COCODataset):
         
 
         target_bc = np.zeros((self.heatmap_size[1],self.heatmap_size[0]), dtype=np.float32)
+        target_dx = np.copy(target_bc)
+        target_dy = np.copy(target_bc)
 
+        bc_weight = 0
         for p in annotations:
             heatmaps, jw, barycenter = self.generate_heatmaps_for_annotation(p)
             p['barycenter'] = barycenter
             # print("Barycenter", barycenter)
-
+            
             if barycenter[2]>0: # valid annotation
-                
+                bc_weight = 1 # at least one valid annotation in this image
                 joints += heatmaps
                 joints_weight[:] += jw[:, np.newaxis]
 
                 bc = self.generate_barycenter_heatmap(barycenter)
                 target_bc += bc
+                mask = bc>0.25
+                dx, dy = barycenter[-2:]
+                target_dx[mask] = dx/self.heatmap_size[0]
+                target_dy[mask] = dy/self.heatmap_size[1]
 
         joints_weight[joints_weight>0] = 1
 
         # stack joints heatmaps and barycenter heatmap
-        target = np.zeros((self.num_joints+1,
+        target = np.zeros((self.num_joints+3,
                             self.heatmap_size[1],
                             self.heatmap_size[0]),
                             dtype=np.float32)
 
         # the last entry is the barycenters heatmap
-        target[:-1,...] = joints
-        target[-1,...] = target_bc
+        target[:-3,...] = joints
+        target[-3,...] = target_bc
+        target[-2,...] = target_dx
+        target[-1,...] = target_dy
         
-        target_weight = np.zeros((self.num_joints+1, 1), dtype=np.float32)
-        target_weight[:-1,...] = joints_weight
-        target_weight[-1,0] = 1 # barycenter map is always valid 
+        
+        target_weight = np.zeros((self.num_joints+3, 1), dtype=np.float32)
+        target_weight[:-3,...] = joints_weight
+        target_weight[-3,0] = bc_weight # barycenter map is always valid 
+        target_weight[-2,0] = bc_weight # barycenter map is always valid 
+        target_weight[-1,0] = bc_weight # barycenter map is always valid 
         return target, target_weight
 
 
     def generate_barycenter_heatmap(self, barycenter):
-        mu_x, mu_y, _ = barycenter
+        mu_x, mu_y, _, _, _ = barycenter
+
         tmp_size = self.sigma * 3
 
         target = np.zeros((self.heatmap_size[1], self.heatmap_size[0]), dtype=np.float32)
@@ -339,7 +365,7 @@ class COCOBCDataset(COCODataset):
         img_y = max(0, ul[1]), min(br[1], self.heatmap_size[1])
 
         target[img_y[0]:img_y[1], img_x[0]:img_x[1]] = g[g_y[0]:g_y[1], g_x[0]:g_x[1]]
-        
+
         return target
 
 

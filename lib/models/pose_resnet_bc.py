@@ -26,7 +26,7 @@ class PoseResNetBC(pose_resnet.PoseResNet):
 
         self.final_layer = nn.Conv2d(
             in_channels=extra.NUM_DECONV_FILTERS[-1],
-            out_channels=cfg.MODEL.NUM_JOINTS + 1,
+            out_channels=cfg.MODEL.NUM_JOINTS + 3,
             kernel_size=extra.FINAL_CONV_KERNEL,
             stride=1,
             padding=1 if extra.FINAL_CONV_KERNEL == 3 else 0

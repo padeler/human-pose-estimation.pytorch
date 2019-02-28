@@ -89,24 +89,37 @@ def run():
         logger.info("Img %s %s",img.shape, img.dtype)
 
         hm = np.squeeze(target.cpu().numpy()).transpose(1,2,0)
-        hm_sum = np.sum(hm[...,:-1],axis=-1)
+        hm_sum = np.sum(hm[...,:-3],axis=-1)
         hm_res = cv2.resize(hm_sum, (0,0),fx=4.,fy=4.)
         # logger.info("Nose min/max %f %f", hm[...,0].min(),hm[...,0].max())
         cv2.imshow("Hm sum",hm_res)
-        bc = hm[...,-1]
+        bc = hm[...,-3]
         logger.info("BC shape %s",bc.shape)
 
+        dx = hm[...,-2]
+        dy = hm[...,-1]
+
+        deltas = cv2.resize(np.dstack((dx,dy,np.zeros_like(dx))),(0,0),fx=4.,fy=4.)
+        cv2.imshow("Deltas", cv2.normalize(deltas, None, 0,255, cv2.NORM_MINMAX, cv2.CV_8UC3))
+        x = np.max(dx) * dx.shape[1]
+        y = np.max(dy) * dy.shape[0]
+        print("DX,DY: ",x,y)
+        
         bc_res = cv2.resize(bc, (0,0),fx=4.,fy=4.)
 
         bc_norm = cv2.normalize(bc_res, None, 0,255, cv2.NORM_MINMAX, cv2.CV_8UC1)
         bc_norm = cv2.cvtColor(bc_norm, cv2.COLOR_GRAY2BGR)
         for idx, a in enumerate(meta['annotations']):
-            bc = a['barycenter']
+            bc = np.array(a['barycenter'])
             print("Anno ",idx," bc ", bc)
             if bc[2]>0:
                 c = (int(bc[0]*4.0),int(bc[1]*4.0))
                 cv2.circle(bc_norm, c, 3, [100,50,255], -1)
                 cv2.putText(bc_norm, str(idx), c, 0, 0.5, [200,100,50],2)
+                dx,dy = bc[-2]*4.0, bc[-1]*4.0
+                pt0 = (int(c[0]-dx/2),int(c[1]-dy/2))
+                pt1 = (int(c[0]+dx/2),int(c[1]+dy/2))
+                cv2.rectangle(bc_norm, pt0, pt1, [255,255,255],1)
 
         cv2.imshow("BC", bc_norm)
 
@@ -114,11 +127,13 @@ def run():
         overlay = cv2.normalize(overlay, None, 0,255,cv2.NORM_MINMAX, cv2.CV_8UC1)
         cv2.imshow("Overlay" , overlay)
 
-        logger.info("Target shape: %s",target.shape)
+        # logger.info("Target shape: %s",target.shape)
         # logger.info("Target shape: %s",target)
         tw = target_weight.cpu().numpy()
-        logger.info("Target Weights shape: %s",tw.shape)
-        print("TW",tw)
+        logger.info("Target Weights shape: %s, %d",tw.shape, tw[0,-1])
+        if tw[0,-1]==0:
+            paused = True
+        # print("TW",tw)
         
         # joints = np.hstack((target.cpu().numpy().squeeze()*4.0,tw[0]))
         # print("Joints: \n",joints)
