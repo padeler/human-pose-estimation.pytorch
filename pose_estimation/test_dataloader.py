@@ -26,6 +26,10 @@ from utils.utils import create_logger
 
 import dataset
 
+import sys
+sys.path.append("../../HumanTracker/build/py_tracker_tools")
+import PyTrackerTools as tt
+
 
 from valid import parse_args, reset_config
 
@@ -101,11 +105,24 @@ def run():
 
         deltas = cv2.resize(np.dstack((dx,dy,np.zeros_like(dx))),(0,0),fx=4.,fy=4.)
         cv2.imshow("Deltas", cv2.normalize(deltas, None, 0,255, cv2.NORM_MINMAX, cv2.CV_8UC3))
-        x = np.max(dx) * dx.shape[1]
-        y = np.max(dy) * dy.shape[0]
-        print("DX,DY: ",x,y)
         
         bc_res = cv2.resize(bc, (0,0),fx=4.,fy=4.)
+
+        thre1 = 0.1
+        centers = tt.FindPeaks(bc, thre1, 1.0, 1.0)[0]
+        if centers is not None:
+            for p,j in enumerate(centers):
+                x, y, score, _ = j
+                w = dx[int(y),int(x)] * bc.shape[1] * 4.0
+                h = dy[int(y),int(x)] * bc.shape[0] * 4.0
+                print("Center ",p , " ==> ", j, w, h)
+                c = (int(x*4.0),int(y*4.0))
+                cv2.circle(img, c, 3, [100,50,255], -1)
+                cv2.putText(img, str(p)+" (%0.2f)"%score, c, 0, 0.3, [200,100,50],1)
+                pt1 = (int(c[0]-w/2),int(c[1]-h/2))
+                pt2 = (int(c[0]+w/2),int(c[1]+h/2))
+                cv2.rectangle(img,pt1,pt2,[255,255,255], 1)
+
 
         bc_norm = cv2.normalize(bc_res, None, 0,255, cv2.NORM_MINMAX, cv2.CV_8UC1)
         bc_norm = cv2.cvtColor(bc_norm, cv2.COLOR_GRAY2BGR)

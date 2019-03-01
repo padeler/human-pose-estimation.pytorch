@@ -41,6 +41,12 @@ import glob
 import cv2
 from valid import parse_args, reset_config
 
+import sys
+
+sys.path.append("../../HumanTracker/build/py_tracker_tools")
+import PyTrackerTools as tt
+
+
 def validate_demo(config, model, preproc):
     # switch to evaluate mode
     model.eval()
@@ -88,8 +94,13 @@ def validate_demo(config, model, preproc):
             batch = tensor.reshape([1,]+list(tensor.shape))
             pred = model(batch)
             pred = np.squeeze(pred.cpu().numpy())
-            hm = pred[:-1,...]
-            bc = pred[-1,...]
+            hm = pred[:-3,...]
+            bc = pred[-3,...]
+            dx = pred[-2,...]
+            dy = pred[-1,...]
+
+
+
 
             dt = time.time()-before
             print("Time to result ",dt,"FPS",(1./dt))
@@ -97,6 +108,23 @@ def validate_demo(config, model, preproc):
             heatmaps = np.squeeze(hm).transpose(1,2,0)
 
             print("Heatmaps, bc ===>",heatmaps.shape,bc.shape)
+
+            thre1 = 0.1
+            centers = tt.FindPeaks(bc, thre1, 1.0, 1.0)[0]
+            if centers is not None:
+                for p,j in enumerate(centers):
+                    x, y, score, _ = j
+                    w = dx[int(y),int(x)] * bc.shape[1] * 4.0
+                    h = dy[int(y),int(x)] * bc.shape[0] * 4.0
+                    print("Center ",p , " ==> ", j, w, h)
+                    c = (int(x*4.0),int(y*4.0))
+                    cv2.circle(im, c, 3, [100,50,255], -1)
+                    cv2.putText(im, str(p)+" (%0.2f)"%score, c, 0, 0.3, [200,100,50],1)
+                    pt1 = (int(c[0]-w/2),int(c[1]-h/2))
+                    pt2 = (int(c[0]+w/2),int(c[1]+h/2))
+                    cv2.rectangle(im,pt1,pt2,[255,255,255], 1)
+
+
 
             cv2.imshow("Source", im)
 
