@@ -92,65 +92,42 @@ def run():
         img = np.squeeze(input.cpu().numpy())
         logger.info("Img %s %s",img.shape, img.dtype)
 
-        hm = np.squeeze(target.cpu().numpy()).transpose(1,2,0)
+        target = np.squeeze(target.cpu().numpy()).transpose(1,2,0)
+        bc = target[...,-1]
+        fields = target[...,17:-1]
+        hm = target[...,:17]
+        
         hm_sum = np.sum(hm[...,:-3],axis=-1)
         hm_res = cv2.resize(hm_sum, (0,0),fx=4.,fy=4.)
         # logger.info("Nose min/max %f %f", hm[...,0].min(),hm[...,0].max())
         cv2.imshow("Hm sum",hm_res)
-        bc = hm[...,-3]
-        logger.info("BC shape %s",bc.shape)
-
-        dx = hm[...,-2]
-        dy = hm[...,-1]
-
-        deltas = cv2.resize(np.dstack((dx,dy,np.zeros_like(dx))),(0,0),fx=4.,fy=4.)
-        cv2.imshow("Deltas", cv2.normalize(deltas, None, 0,255, cv2.NORM_MINMAX, cv2.CV_8UC3))
-        
-        bc_res = cv2.resize(bc, (0,0),fx=4.,fy=4.)
-
-        thre1 = 0.1
-        centers = tt.FindPeaks(bc, thre1, 1.0, 1.0)[0]
-        if centers is not None:
-            for p,j in enumerate(centers):
-                x, y, score, _ = j
-                w = dx[int(y),int(x)] * bc.shape[1] * 4.0
-                h = dy[int(y),int(x)] * bc.shape[0] * 4.0
-                print("Center ",p , " ==> ", j, w, h)
-                c = (int(x*4.0),int(y*4.0))
-                cv2.circle(img, c, 3, [100,50,255], -1)
-                cv2.putText(img, str(p)+" (%0.2f)"%score, c, 0, 0.3, [200,100,50],1)
-                pt1 = (int(c[0]-w/2),int(c[1]-h/2))
-                pt2 = (int(c[0]+w/2),int(c[1]+h/2))
-                cv2.rectangle(img,pt1,pt2,[255,255,255], 1)
-
-
-        bc_norm = cv2.normalize(bc_res, None, 0,255, cv2.NORM_MINMAX, cv2.CV_8UC1)
-        bc_norm = cv2.cvtColor(bc_norm, cv2.COLOR_GRAY2BGR)
-        for idx, a in enumerate(meta['annotations']):
-            bc = np.array(a['barycenter'])
-            print("Anno ",idx," bc ", bc)
-            if bc[2]>0:
-                c = (int(bc[0]*4.0),int(bc[1]*4.0))
-                cv2.circle(bc_norm, c, 3, [100,50,255], -1)
-                cv2.putText(bc_norm, str(idx), c, 0, 0.5, [200,100,50],2)
-                dx,dy = bc[-2]*4.0, bc[-1]*4.0
-                pt0 = (int(c[0]-dx/2),int(c[1]-dy/2))
-                pt1 = (int(c[0]+dx/2),int(c[1]+dy/2))
-                cv2.rectangle(bc_norm, pt0, pt1, [255,255,255],1)
-
-        cv2.imshow("BC", bc_norm)
 
         overlay = np.copy(img).astype(np.float32)/255. + hm_res[...,np.newaxis]
         overlay = cv2.normalize(overlay, None, 0,255,cv2.NORM_MINMAX, cv2.CV_8UC1)
         cv2.imshow("Overlay" , overlay)
 
+        fields_dx = np.sum(fields[...,::2],axis=-1)
+        fields_dy = np.sum(fields[...,1::2],axis=-1)
+        fields_rgb = np.dstack((fields_dx,fields_dy,np.zeros_like(fields_dx)))
+        fields_rgb = cv2.normalize(fields_rgb, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8UC3)
+        fields_rgb[...,2] = cv2.normalize(bc, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8UC1)
+        
+        cv2.imshow("Fields RGB",cv2.resize(fields_rgb, (0,0),fx=4.,fy=4.))
+
+
+        for idx, a in enumerate(meta['annotations']):
+            bc = np.array(a['barycenter'])
+            print("Anno ",idx," bc ", bc)
+            if bc[2]>0:
+                c = (int(bc[0]*4.0),int(bc[1]*4.0))
+                cv2.circle(img, c, 3, [100,50,255], -1)
+                cv2.putText(img, str(idx), c, 0, 0.5, [200,100,50],2)
+
+
         # logger.info("Target shape: %s",target.shape)
         # logger.info("Target shape: %s",target)
         tw = target_weight.cpu().numpy()
         logger.info("Target Weights shape: %s, %d",tw.shape, tw[0,-1])
-        if tw[0,-1]==0:
-            paused = True
-        # print("TW",tw)
         
         # joints = np.hstack((target.cpu().numpy().squeeze()*4.0,tw[0]))
         # print("Joints: \n",joints)

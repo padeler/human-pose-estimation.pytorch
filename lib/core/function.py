@@ -36,17 +36,17 @@ def train(config, train_loader, model, criterion, optimizer, epoch,
     model.train()
 
     end = time.time()
-    for i, (input, jointsbc, jointsbc_weight, meta) in enumerate(train_loader):
+    for i, (input, gt_target, weights, meta) in enumerate(train_loader):
         # measure data loading time
         data_time.update(time.time() - end)
 
         # compute output
         output = model(input)
-        jointsbc = jointsbc.cuda(non_blocking=True)
-        jointsbc_weight = jointsbc_weight.cuda(non_blocking=True)
+        gt_target = gt_target.cuda(non_blocking=True)
+        weights = weights.cuda(non_blocking=True)
+        
 
-
-        loss = criterion(output, jointsbc, jointsbc_weight)
+        loss = criterion(output, gt_target, weights)
 
         # compute gradient and do update step
         optimizer.zero_grad()
@@ -57,7 +57,8 @@ def train(config, train_loader, model, criterion, optimizer, epoch,
         losses.update(loss.item(), input.size(0))
 
         _, avg_acc, cnt, pred = accuracy(output.detach().cpu().numpy(),
-                                         jointsbc.detach().cpu().numpy(),hm_type=config.MODEL.EXTRA.TARGET_TYPE)
+                                         gt_target.detach().cpu().numpy(),
+                                         hm_type=config.MODEL.EXTRA.TARGET_TYPE)
         acc.update(avg_acc, cnt)
 
         # measure elapsed time
@@ -83,7 +84,7 @@ def train(config, train_loader, model, criterion, optimizer, epoch,
             writer_dict['train_global_steps'] = global_steps + 1
 
             prefix = '{}_{}'.format(os.path.join(output_dir, 'train'), i)
-            save_debug_images(config, input, meta, jointsbc, pred*4, output,
+            save_debug_images(config, input, meta, gt_target, pred*4, output,
                               prefix)
 
 

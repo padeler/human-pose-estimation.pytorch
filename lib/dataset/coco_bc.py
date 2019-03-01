@@ -181,7 +181,22 @@ class COCOBCDataset(COCODataset):
                 'joints_vis':joints_vis,
             })
 
-        target, target_weight = self.generate_target(annotations_meta)
+        joints, fields, bc, joints_weight = self.generate_target(annotations_meta)
+        
+        target = np.zeros((self.num_joints*3 + 1,
+                            self.heatmap_size[1],
+                            self.heatmap_size[0]),
+                            dtype=np.float32)
+
+        target[:self.num_joints,...] = joints
+        target[self.num_joints:-1,...] = fields
+        target[-1,...] = bc
+
+        target_weight = np.zeros((self.num_joints*3+1, 1), dtype=np.float32)
+        target_weight[:self.num_joints,...] = joints_weight
+        target_weight[self.num_joints:-1,...] = joints_weight.repeat(2,axis=0)
+        if np.sum(joints_weight)>0:
+            target_weight[-1,0] = 1
 
         target = torch.from_numpy(target)
         target_weight = torch.from_numpy(target_weight)
@@ -207,9 +222,6 @@ class COCOBCDataset(COCODataset):
         bc_x = bc_y = 0 # barycenter coords
         vis_joint_count = 0 # number of visible joints (for computing barycenter)
 
-        min_x = min_y = 2000.
-        max_x = max_y = -2000.
-
         
         target = np.zeros((self.num_joints,
                             self.heatmap_size[1],
@@ -234,13 +246,6 @@ class COCOBCDataset(COCODataset):
                 bc_y += mu_y
                 vis_joint_count += 1
                 
-                min_x = min(min_x, mu_x)
-                min_y = min(min_y, mu_y)
-
-                max_x = max(max_x, mu_x)
-                max_y = max(max_y, mu_y)
-
-                
                 # # Generate gaussian
                 size = 2 * tmp_size + 1
                 x = np.arange(0, size, 1, np.float32)
@@ -259,13 +264,10 @@ class COCOBCDataset(COCODataset):
                 target[joint_id][img_y[0]:img_y[1], img_x[0]:img_x[1]] = \
                     g[g_y[0]:g_y[1], g_x[0]:g_x[1]]
         
-        if vis_joint_count>0:
-            dx = max(max_x - min_x,1) + 2 # bouding box has >=3pixels side on the net output
-            dy = max(max_y - min_y,1) + 2
-            
-            barycenter = [bc_x/vis_joint_count, bc_y/vis_joint_count,vis_joint_count, dx, dy]
+        if vis_joint_count>0:           
+            barycenter = [bc_x/vis_joint_count, bc_y/vis_joint_count, vis_joint_count]
         else:
-            barycenter = [0, 0, 0, 0, 0]
+            barycenter = [0, 0, 0]
 
         return target, jw, barycenter
 
@@ -288,9 +290,14 @@ class COCOBCDataset(COCODataset):
                             dtype=np.float32)
         
 
-        target_bc = np.zeros((self.heatmap_size[1],self.heatmap_size[0]), dtype=np.float32)
-        target_dx = np.copy(target_bc)
-        target_dy = np.copy(target_bc)
+        # prepare fields base
+        # create indices
+        indices = np.indices((self.heatmap_size[1],self.heatmap_size[0])).astype(np.float32)
+        indices[0] /= self.heatmap_size[1] # normalize to [0,1)
+        indices[1] /= self.heatmap_size[0]
+
+        target_bc = np.zeros((1, self.heatmap_size[1],self.heatmap_size[0]), dtype=np.float32)
+        target_fields = np.zeros((self.num_joints*2,self.heatmap_size[1],self.heatmap_size[0]), dtype=np.float32)
 
         bc_weight = 0
         for p in annotations:
@@ -303,38 +310,30 @@ class COCOBCDataset(COCODataset):
                 joints += heatmaps
                 joints_weight[:] += jw[:, np.newaxis]
 
+                # create and add barycenter gaussian
                 bc = self.generate_barycenter_heatmap(barycenter)
-                target_bc += bc
-                mask = bc>0.25
-                dx, dy = barycenter[-2:]
-                target_dx[mask] = dx/self.heatmap_size[0]
-                target_dy[mask] = dy/self.heatmap_size[1]
+                target_bc[0] += bc
+                
+                # create fields
+                fields = self.generate_fields_for_barycenter(barycenter, indices)
+                # mask fields using the heatmaps
+                hm_mask = heatmaps>0.25
+                for j in range(self.num_joints):
+                    fields[2*j] *= hm_mask[j]
+                    fields[2*j+1] *= hm_mask[j]
+
+                target_fields += fields
+
 
         joints_weight[joints_weight>0] = 1
+        if bc_weight==0 and np.sum(joints_weight)>0:
+            raise RuntimeError("BC Weights must be 1 if joints are visible")
 
-        # stack joints heatmaps and barycenter heatmap
-        target = np.zeros((self.num_joints+3,
-                            self.heatmap_size[1],
-                            self.heatmap_size[0]),
-                            dtype=np.float32)
-
-        # the last entry is the barycenters heatmap
-        target[:-3,...] = joints
-        target[-3,...] = target_bc
-        target[-2,...] = target_dx
-        target[-1,...] = target_dy
-        
-        
-        target_weight = np.zeros((self.num_joints+3, 1), dtype=np.float32)
-        target_weight[:-3,...] = joints_weight
-        target_weight[-3,0] = bc_weight # barycenter map is always valid 
-        target_weight[-2,0] = bc_weight # barycenter map is always valid 
-        target_weight[-1,0] = bc_weight # barycenter map is always valid 
-        return target, target_weight
+        return joints, target_fields, target_bc, joints_weight
 
 
     def generate_barycenter_heatmap(self, barycenter):
-        mu_x, mu_y, _, _, _ = barycenter
+        mu_x, mu_y, _ = barycenter
 
         tmp_size = self.sigma * 3
 
@@ -368,4 +367,22 @@ class COCOBCDataset(COCODataset):
 
         return target
 
+
+
+
+    def generate_fields_for_barycenter(self, barycenter, indices_base):
+
+        fields = []
+        bcx, bcy = barycenter[:2]
+        # normalize barycenter coords
+        bcx /= self.heatmap_size[0] 
+        bcy /= self.heatmap_size[1]
+
+        indices = np.copy(indices_base)
+        indices[0] -= bcy
+        indices[1] -= bcx
+
+        # one pair (X,Y) copy for each joint
+        fields = np.stack((indices,)*self.num_joints).reshape(-1,self.heatmap_size[1],self.heatmap_size[0])
+        return fields
 
