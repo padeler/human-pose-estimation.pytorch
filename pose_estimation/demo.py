@@ -41,10 +41,15 @@ import glob
 import cv2
 from valid import parse_args, reset_config
 
-import sys
+from pose_estimation.utils import fields2skeletons, visualize_skeletons
 
-sys.path.append("../../HumanTracker/build/py_tracker_tools")
-import PyTrackerTools as tt
+
+COLORS = [[255, 0, 0], [255, 85, 0], [255, 170, 0], [255, 255, 0], [170, 255, 0], [85, 255, 0],
+          [0, 255, 0],
+          [0, 255, 85], [0, 255, 170], [0, 255, 255], [
+              0, 170, 255], [0, 85, 255], [0, 0, 255],
+          [85, 0, 255],
+          [170, 0, 255], [255, 0, 255], [255, 0, 170], [255, 0, 85]]
 
 
 def validate_demo(config, model, preproc):
@@ -59,22 +64,22 @@ def validate_demo(config, model, preproc):
     print("Validation demo loop.")
     with torch.no_grad():
 
-        dataset_path = "/media/storage/home/padeler/work/datasets/coco_2017/val2017"
-        val_set = glob.glob(dataset_path+os.sep+"*.jpg")
-        val_set.sort()
-        for fname in val_set:
-            if k&0xFF ==ord('q'):
-                break
-            image_id = int(os.path.os.path.basename(fname)[:-4])
-            frame = cv2.imread(fname)
+        # dataset_path = "/media/storage/home/padeler/work/datasets/coco_2017/val2017"
+        # val_set = glob.glob(dataset_path+os.sep+"*.jpg")
+        # val_set.sort()
+        # for fname in val_set:
+        #     if k&0xFF ==ord('q'):
+        #         break
+        #     image_id = int(os.path.os.path.basename(fname)[:-4])
+        #     frame = cv2.imread(fname)
 
-        # cap = cv2.VideoCapture(0)
-        # cap.set(cv2.CAP_PROP_BRIGHTNESS, 1.0)
-        # idx = 0 
-        # while k&0xFF != ord('q'):
-        #     ret, frame = cap.read()
-        #     if not ret:
-        #         raise Exception("VideoCapture.read() returned False")
+        cap = cv2.VideoCapture(0)
+        cap.set(cv2.CAP_PROP_BRIGHTNESS, 1.0)
+        idx = 0 
+        while k&0xFF != ord('q'):
+            ret, frame = cap.read()
+            if not ret:
+                raise Exception("VideoCapture.read() returned False")
             
 
             # boxsize = list(config.MODEL.IMAGE_SIZE[::-1]) # height,width
@@ -94,51 +99,59 @@ def validate_demo(config, model, preproc):
             batch = tensor.reshape([1,]+list(tensor.shape))
             pred = model(batch)
             pred = np.squeeze(pred.cpu().numpy())
-            hm = pred[:-3,...]
-            bc = pred[-3,...]
-            dx = pred[-2,...]
-            dy = pred[-1,...]
 
+            hm = pred[:17,...]
+            fields = pred[17:-1,...]
+            bc = pred[-1,...]
 
-
+            mask = np.zeros_like(bc)
 
             dt = time.time()-before
             print("Time to result ",dt,"FPS",(1./dt))
 
             heatmaps = np.squeeze(hm).transpose(1,2,0)
-
             print("Heatmaps, bc ===>",heatmaps.shape,bc.shape)
 
-            thre1 = 0.1
-            centers = tt.FindPeaks(bc, thre1, 1.0, 1.0)[0]
+            fields = np.squeeze(fields).transpose(1,2,0)
+
+            joints, centers, joints_bc, skeletons = fields2skeletons(heatmaps, fields, bc)
+
+            for i,jg in enumerate(joints):
+                if jg is not None:
+                    for j, cand in enumerate(jg):
+                        x, y, score, _ = cand
+                        j_bc = joints_bc[i][j]
+                        pos_x = int(j_bc[0])
+                        pos_y = int(j_bc[1])
+                        if pos_x>=0 and pos_y>=0 and pos_x<bc.shape[1] and pos_y<bc.shape[0]:
+                            mask[pos_y, pos_x] += 1.0
+
+
             if centers is not None:
                 for p,j in enumerate(centers):
+                    print(p,",",j)
                     x, y, score, _ = j
-                    w = dx[int(y),int(x)] * bc.shape[1] * 4.0
-                    h = dy[int(y),int(x)] * bc.shape[0] * 4.0
-                    print("Center ",p , " ==> ", j, w, h)
                     c = (int(x*4.0),int(y*4.0))
                     cv2.circle(im, c, 3, [100,50,255], -1)
                     cv2.putText(im, str(p)+" (%0.2f)"%score, c, 0, 0.3, [200,100,50],1)
-                    pt1 = (int(c[0]-w/2),int(c[1]-h/2))
-                    pt2 = (int(c[0]+w/2),int(c[1]+h/2))
-                    cv2.rectangle(im,pt1,pt2,[255,255,255], 1)
 
-
+            im = visualize_skeletons(im, joints, skeletons)
 
             cv2.imshow("Source", im)
 
             sel_hm = heatmaps[...,idx]
  
             print("HM ",idx, "min, max, mean, median:", np.min(sel_hm),np.max(sel_hm),np.mean(sel_hm),np.median(sel_hm))
-            cv2.imshow("Heatmap idx",cv2.normalize(sel_hm,None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8UC1))
+            cv2.imshow("Heatmap idx",cv2.normalize(sel_hm, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8UC1))
             
             sum_hm = np.sum(heatmaps,axis=-1)
-            cv2.imshow("Heatmap sum",cv2.normalize(sum_hm,None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8UC1))
-
+            cv2.imshow("Heatmap sum",cv2.normalize(sum_hm, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8UC1))
 
             bc_res = cv2.resize(bc,(0,0),fx=4.0,fy=4.0)
-            cv2.imshow("Barycenters",cv2.normalize(bc_res,None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8UC1))
+            cv2.imshow("Barycenters",cv2.normalize(bc_res, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8UC1))
+
+            mask_res = cv2.resize(mask,(0,0),fx=4.0,fy=4.0)
+            cv2.imshow("Instance Mask",cv2.normalize(mask_res, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8UC1))
 
             k = cv2.waitKey(delay[paused])
             if k&0xFF==ord('q'):
@@ -149,6 +162,11 @@ def validate_demo(config, model, preproc):
                 idx += 1
                 idx = idx%heatmaps.shape[2]
                 print("Showing heatmap idx",idx)
+
+            if k&0xFF==ord('s'):
+                data = {}
+                print("Saving frame data")
+                np.savez("data.npz", image=im, fields=fields, heatmaps=heatmaps, bc=bc)
 
 
 

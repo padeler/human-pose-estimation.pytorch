@@ -42,6 +42,16 @@ colors = [[255,255,255],
           [0, 0, 255], [60, 0, 255], [120, 0, 255], [180, 0, 255],]
 
 
+
+COLORS = [[255, 0, 0], [255, 85, 0], [255, 170, 0], [255, 255, 0], [170, 255, 0], [85, 255, 0],
+          [0, 255, 0],
+          [0, 255, 85], [0, 255, 170], [0, 255, 255], [
+              0, 170, 255], [0, 85, 255], [0, 0, 255],
+          [85, 0, 255],
+          [170, 0, 255], [255, 0, 255], [255, 0, 170], [255, 0, 85]]
+
+
+
 def viz_joints(canvas, joints, txt_size=0.5):
     for i, p in enumerate(joints):
         x,y,v = int(p[0]), int(p[1]), int(p[2])
@@ -114,6 +124,32 @@ def run():
         
         cv2.imshow("Fields RGB",cv2.resize(fields_rgb, (0,0),fx=4.,fy=4.))
 
+
+        heatmaps = hm
+        print("Heatmaps, bc ===>",heatmaps.shape,bc.shape)
+
+
+        thre1 = 0.1
+        joints = tt.FindPeaks(heatmaps, thre1, 1.0, 1.0)
+        mask = np.zeros_like(bc)
+
+        for i, jg in enumerate(joints):
+            if jg is not None:
+                for j, cand in enumerate(jg):
+                    x, y, score, _ = cand
+
+                    dx =  fields[int(y), int(x), i*2+1] * bc.shape[1]
+                    dy =  fields[int(y), int(x), i*2]   * bc.shape[0]
+                    pos_y = int(y-dy)
+                    pos_x = int(x-dx)
+                    print(i,",",j," ==> ",x, y, dx, dy, "===>",pos_x,pos_y)
+
+                    if pos_x>=0 and pos_y>=0 and pos_x<bc.shape[1] and pos_y<bc.shape[0]:
+                        mask[pos_y, pos_x] += 1.0
+
+
+        mask_res = cv2.resize(mask,(0,0),fx=4.0,fy=4.0)
+        cv2.imshow("Instance Mask",cv2.normalize(mask_res, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8UC1))
 
         for idx, a in enumerate(meta['annotations']):
             bc = np.array(a['barycenter'])
