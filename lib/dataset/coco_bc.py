@@ -135,16 +135,16 @@ class COCOBCDataset(COCODataset):
 
         # each entry has multiple annotations. 
         # XXX Pick one randomly for augmentation center
-        pos = random.randint(0,len(db_rec['annotations'])-1)
-        sel_ann = db_rec['annotations'][pos]
-        c = sel_ann['center']
-        s = sel_ann['scale']
-        s[0] = max(1.0,s[0]) # dont allow too match zoom in suBjects
-        s[1] = max(1.0,s[1])
+        # pos = random.randint(0,len(db_rec['annotations'])-1)
+        # sel_ann = db_rec['annotations'][pos]
+        # c = sel_ann['center']
+        # s = sel_ann['scale']
+        # s[0] = max(1.0,s[0]) # dont allow too match zoom in suBjects
+        # s[1] = max(1.0,s[1])
 
         # XXX Full image 
-        # c = np.array([width/2.,height/2.], dtype=np.float32)
-        # s = np.array([width/self.image_width, height/self.image_height], dtype=np.float32)
+        c = np.array([width/2.,height/2.], dtype=np.float32)
+        s = np.array([width/self.image_width, height/self.image_height], dtype=np.float32)
 
         r = 0
 
@@ -386,3 +386,65 @@ class COCOBCDataset(COCODataset):
         fields = np.stack((indices,)*self.num_joints).reshape(-1,self.heatmap_size[1],self.heatmap_size[0])
         return fields
 
+
+
+
+    # need double check this API and classes field
+    def evaluate(self, cfg, preds, output_dir, *args, **kwargs):
+        res_folder = os.path.join(output_dir, 'results')
+        if not os.path.exists(res_folder):
+            os.makedirs(res_folder)
+        res_file = os.path.join(
+            res_folder, 'keypoints_%s_results.json' % self.image_set)
+
+        # person x (keypoints)
+        _kpts = []
+        for idx, sk in enumerate(preds):
+            _kpts.append({
+                'keypoints': sk.joints,
+                # 'center': all_boxes[idx][0:2],
+                # 'scale': all_boxes[idx][2:4],
+                'area': sk.area,
+                # 'score': all_boxes[idx][5],
+                'image': int(sk.image_path[-16:-4])
+            })
+        # image x person x (keypoints)
+        kpts = defaultdict(list)
+        for kpt in _kpts:
+            kpts[kpt['image']].append(kpt)
+
+        # rescoring and oks nms
+        num_joints = self.num_joints
+        in_vis_thre = self.in_vis_thre
+        oks_thre = self.oks_thre
+        oks_nmsed_kpts = []
+        for img in kpts.keys():
+            img_kpts = kpts[img]
+            for n_p in img_kpts:
+                # box_score = n_p['score']
+                kpt_score = 0
+                valid_num = 0
+                for n_jt in range(0, num_joints):
+                    t_s = n_p['keypoints'][n_jt][2]
+                    if t_s > in_vis_thre:
+                        kpt_score = kpt_score + t_s
+                        valid_num = valid_num + 1
+                if valid_num != 0:
+                    kpt_score = kpt_score / valid_num
+                # rescoring
+                n_p['score'] = kpt_score #* box_score
+            keep = oks_nms([img_kpts[i] for i in range(len(img_kpts))], oks_thre)
+            if len(keep) == 0:
+                oks_nmsed_kpts.append(img_kpts)
+            else:
+                oks_nmsed_kpts.append([img_kpts[_keep] for _keep in keep])
+
+        self._write_coco_keypoint_results(oks_nmsed_kpts, res_file)
+
+        if 'test' not in self.image_set:
+            info_str = self._do_python_keypoint_eval(
+                res_file, res_folder)
+            name_value = OrderedDict(info_str)
+            return name_value, name_value['AP']
+        else:
+            return {'Null': 0}, 0

@@ -380,8 +380,8 @@ class COCODataset(JointsDataset):
                        'category_id': cat_id,
                        'keypoints': list(key_points[k]),
                        'score': img_kpts[k]['score'],
-                       'center': list(img_kpts[k]['center']),
-                       'scale': list(img_kpts[k]['scale'])
+                    #    'center': list(img_kpts[k]['center']),
+                    #    'scale': list(img_kpts[k]['scale'])
                        } for k in range(len(img_kpts))]
             cat_results.extend(result)
 

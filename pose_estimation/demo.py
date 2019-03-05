@@ -41,7 +41,7 @@ import glob
 import cv2
 from valid import parse_args, reset_config
 
-from pose_estimation.utils import fields2skeletons, visualize_skeletons
+from utils.skeleton_tools import fields2skeletons, visualize_skeletons
 
 
 COLORS = [[255, 0, 0], [255, 85, 0], [255, 170, 0], [255, 255, 0], [170, 255, 0], [85, 255, 0],
@@ -64,31 +64,32 @@ def validate_demo(config, model, preproc):
     print("Validation demo loop.")
     with torch.no_grad():
 
-        # dataset_path = "/media/storage/home/padeler/work/datasets/coco_2017/val2017"
-        # val_set = glob.glob(dataset_path+os.sep+"*.jpg")
-        # val_set.sort()
-        # for fname in val_set:
-        #     if k&0xFF ==ord('q'):
-        #         break
-        #     image_id = int(os.path.os.path.basename(fname)[:-4])
-        #     frame = cv2.imread(fname)
+        dataset_path = "/media/storage/home/padeler/work/datasets/coco_2017/val2017"
+        val_set = glob.glob(dataset_path+os.sep+"*.jpg")
+        val_set.sort()
+        for fname in val_set:
+            if k&0xFF ==ord('q'):
+                break
+            image_id = int(os.path.os.path.basename(fname)[:-4])
+            frame = cv2.imread(fname)
 
-        cap = cv2.VideoCapture(0)
-        cap.set(cv2.CAP_PROP_BRIGHTNESS, 1.0)
-        idx = 0 
-        while k&0xFF != ord('q'):
-            ret, frame = cap.read()
-            if not ret:
-                raise Exception("VideoCapture.read() returned False")
+        # cap = cv2.VideoCapture(0)
+        # cap.set(cv2.CAP_PROP_BRIGHTNESS, 1.0)
+        # idx = 0 
+        # while k&0xFF != ord('q'):
+        #     ret, frame = cap.read()
+        #     if not ret:
+        #         raise Exception("VideoCapture.read() returned False")
             
-
             # boxsize = list(config.MODEL.IMAGE_SIZE[::-1]) # height,width
-            boxsize = [256, 256]
-            im = np.zeros(boxsize+[3,],dtype=np.uint8)
-            sc = boxsize[0]/frame.shape[0]
+            boxsize = 512
+            im = np.zeros([boxsize,boxsize,3,],dtype=np.uint8)
+
+            sc = boxsize/np.max(frame.shape[:2])
             frame_sc = cv2.resize(frame,(0,0),fx=sc,fy=sc)
             h,w = frame_sc.shape[:2]
-            w = min(w,boxsize[1])
+            h = min(h,boxsize)
+            w = min(w,boxsize)
             # print("IM ",im.shape," to ",frame_sc.shape)
             im[:h,:w] = frame_sc[:h,:w]
 
@@ -135,7 +136,7 @@ def validate_demo(config, model, preproc):
                     cv2.circle(im, c, 3, [100,50,255], -1)
                     cv2.putText(im, str(p)+" (%0.2f)"%score, c, 0, 0.3, [200,100,50],1)
 
-            im = visualize_skeletons(im, joints, skeletons)
+            im = visualize_skeletons(im, skeletons)
 
             cv2.imshow("Source", im)
 

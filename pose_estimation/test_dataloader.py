@@ -24,6 +24,8 @@ from core.config import update_config
 from core.function import validate
 from utils.utils import create_logger
 
+from utils.skeleton_tools import visualize_skeletons, get_batch_predictions
+
 import dataset
 
 import sys
@@ -102,6 +104,19 @@ def run():
         img = np.squeeze(input.cpu().numpy())
         logger.info("Img %s %s",img.shape, img.dtype)
 
+        c = meta['center'].numpy()
+        s = meta['scale'].numpy()
+        batch_images = meta['image']
+        # score = meta['score'].numpy()
+
+        batch_predictions = get_batch_predictions(config, target.clone().cpu().numpy(), c, s, batch_images)
+        full_img = cv2.imread(batch_images[0])
+        sk_viz = visualize_skeletons(full_img, batch_predictions)
+        print("Skeletons found: ",len(batch_predictions)," original canvas ", full_img.shape)
+        cv2.imshow("SKel Viz",sk_viz)
+
+
+
         target = np.squeeze(target.cpu().numpy()).transpose(1,2,0)
         bc = target[...,-1]
         fields = target[...,17:-1]
@@ -129,27 +144,28 @@ def run():
         print("Heatmaps, bc ===>",heatmaps.shape,bc.shape)
 
 
-        thre1 = 0.1
-        joints = tt.FindPeaks(heatmaps, thre1, 1.0, 1.0)
-        mask = np.zeros_like(bc)
+        # thre1 = 0.1
+        # joints = tt.FindPeaks(heatmaps, thre1, 1.0, 1.0)
+        # mask = np.zeros_like(bc)
 
-        for i, jg in enumerate(joints):
-            if jg is not None:
-                for j, cand in enumerate(jg):
-                    x, y, score, _ = cand
+        # for i, jg in enumerate(joints):
+        #     if jg is not None:
+        #         for j, cand in enumerate(jg):
+        #             x, y, score, _ = cand
 
-                    dx =  fields[int(y), int(x), i*2+1] * bc.shape[1]
-                    dy =  fields[int(y), int(x), i*2]   * bc.shape[0]
-                    pos_y = int(y-dy)
-                    pos_x = int(x-dx)
-                    print(i,",",j," ==> ",x, y, dx, dy, "===>",pos_x,pos_y)
+        #             dx =  fields[int(y), int(x), i*2+1] * bc.shape[1]
+        #             dy =  fields[int(y), int(x), i*2]   * bc.shape[0]
+        #             pos_y = int(y-dy)
+        #             pos_x = int(x-dx)
+        #             print(i,",",j," ==> ",x, y, dx, dy, "===>",pos_x,pos_y)
 
-                    if pos_x>=0 and pos_y>=0 and pos_x<bc.shape[1] and pos_y<bc.shape[0]:
-                        mask[pos_y, pos_x] += 1.0
+        #             if pos_x>=0 and pos_y>=0 and pos_x<bc.shape[1] and pos_y<bc.shape[0]:
+        #                 mask[pos_y, pos_x] += 1.0
 
 
-        mask_res = cv2.resize(mask,(0,0),fx=4.0,fy=4.0)
-        cv2.imshow("Instance Mask",cv2.normalize(mask_res, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8UC1))
+        # mask_res = cv2.resize(mask,(0,0),fx=4.0,fy=4.0)
+        # cv2.imshow("Instance Mask",cv2.normalize(mask_res, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8UC1))
+
 
         for idx, a in enumerate(meta['annotations']):
             bc = np.array(a['barycenter'])
@@ -160,14 +176,10 @@ def run():
                 cv2.putText(img, str(idx), c, 0, 0.5, [200,100,50],2)
 
 
-        # logger.info("Target shape: %s",target.shape)
-        # logger.info("Target shape: %s",target)
-        tw = target_weight.cpu().numpy()
-        logger.info("Target Weights shape: %s, %d",tw.shape, tw[0,-1])
+        # tw = target_weight.cpu().numpy()
+        # logger.info("Target Weights shape: %s, %d",tw.shape, tw[0,-1])
         
-        # joints = np.hstack((target.cpu().numpy().squeeze()*4.0,tw[0]))
-        # print("Joints: \n",joints)
-        # img = viz_joints(img, joints)
+
         cv2.imshow("Input", img)
         k = cv2.waitKey(delay[paused])
         if k&0xFF==ord('q'):

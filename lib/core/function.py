@@ -22,6 +22,8 @@ from utils.transforms import flip_back
 from utils.vis import save_debug_images
 
 
+from utils.skeleton_tools import get_batch_predictions
+
 logger = logging.getLogger(__name__)
 
 
@@ -97,13 +99,7 @@ def validate(config, val_loader, val_dataset, model, criterion, output_dir,
     # switch to evaluate mode
     model.eval()
 
-    num_samples = len(val_dataset)
-    all_preds = np.zeros((num_samples, config.MODEL.NUM_JOINTS, 3),
-                         dtype=np.float32)
-    all_boxes = np.zeros((num_samples, 6))
-    image_path = []
-    filenames = []
-    imgnums = []
+    all_preds = []
     idx = 0
     with torch.no_grad():
         end = time.time()
@@ -147,26 +143,14 @@ def validate(config, val_loader, val_dataset, model, criterion, output_dir,
             batch_time.update(time.time() - end)
             end = time.time()
 
-            # c = meta['center'].numpy()
-            # s = meta['scale'].numpy()
+            c = meta['center'].numpy()
+            s = meta['scale'].numpy()
+            batch_images = meta['image']
             # score = meta['score'].numpy()
 
-            # preds, maxvals = get_final_preds(
-            #     config, output.clone().cpu().numpy(), c, s)
+            batch_predictions = get_batch_predictions(config, output.clone().cpu().numpy(), c, s, batch_images)
 
-            # all_preds[idx:idx + num_images, :, 0:2] = preds[:, :, 0:2]
-            # all_preds[idx:idx + num_images, :, 2:3] = maxvals
-            # # double check this all_boxes parts
-            # all_boxes[idx:idx + num_images, 0:2] = c[:, 0:2]
-            # all_boxes[idx:idx + num_images, 2:4] = s[:, 0:2]
-            # all_boxes[idx:idx + num_images, 4] = np.prod(s*200, 1)
-            # all_boxes[idx:idx + num_images, 5] = score
-            # image_path.extend(meta['image'])
-            # if config.DATASET.DATASET == 'posetrack':
-            #     filenames.extend(meta['filename'])
-            #     imgnums.extend(meta['imgnum'].numpy())
-
-            idx += num_images
+            all_preds.extend(batch_predictions)
 
             if i % config.PRINT_FREQ == 0:
                 msg = 'Test: [{0}/{1}]\t' \
@@ -181,29 +165,26 @@ def validate(config, val_loader, val_dataset, model, criterion, output_dir,
                 save_debug_images(config, input, meta, jointsbc, pred*4, output,
                                   prefix)
 
-        # name_values, perf_indicator = val_dataset.evaluate(
-        #     config, all_preds, output_dir, all_boxes, image_path,
-        #     filenames, imgnums)
+        name_values, perf_indicator = val_dataset.evaluate( config, all_preds, output_dir)
 
-        # _, full_arch_name = get_model_name(config)
-        # if isinstance(name_values, list):
-        #     for name_value in name_values:
-        #         _print_name_value(name_value, full_arch_name)
-        # else:
-        #     _print_name_value(name_values, full_arch_name)
+        _, full_arch_name = get_model_name(config)
+        if isinstance(name_values, list):
+            for name_value in name_values:
+                _print_name_value(name_value, full_arch_name)
+        else:
+            _print_name_value(name_values, full_arch_name)
 
-        # if writer_dict:
-        #     writer = writer_dict['writer']
-        #     global_steps = writer_dict['valid_global_steps']
-        #     writer.add_scalar('valid_loss', losses.avg, global_steps)
-        #     writer.add_scalar('valid_acc', acc.avg, global_steps)
-        #     if isinstance(name_values, list):
-        #         for name_value in name_values:
-        #             writer.add_scalars('valid', dict(name_value), global_steps)
-        #     else:
-        #         writer.add_scalars('valid', dict(name_values), global_steps)
-        #     writer_dict['valid_global_steps'] = global_steps + 1
-    perf_indicator = 0 
+        if writer_dict:
+            writer = writer_dict['writer']
+            global_steps = writer_dict['valid_global_steps']
+            writer.add_scalar('valid_loss', losses.avg, global_steps)
+            writer.add_scalar('valid_acc', acc.avg, global_steps)
+            if isinstance(name_values, list):
+                for name_value in name_values:
+                    writer.add_scalars('valid', dict(name_value), global_steps)
+            else:
+                writer.add_scalars('valid', dict(name_values), global_steps)
+            writer_dict['valid_global_steps'] = global_steps + 1
     return perf_indicator
 
 
