@@ -46,7 +46,7 @@ def visualize_joints(canvas, joints):
 def visualize_skeletons(canvas, skeletons):
     stickwidth = 3
     for s_idx, skel in enumerate(skeletons): 
-        print(s_idx, "Sk joints",skel.joints)               
+        # print(s_idx, "Sk joints",skel.joints)               
         for limp in LIMBSEQ:
             start, end = int(skel.indices[limp[0]]),int(skel.indices[limp[1]])
             if start>-1 and end>-1:
@@ -204,24 +204,24 @@ def compute_area(joints, indices):
     return 0
             
 
-def get_batch_predictions(config, batch, batch_centers, batch_scales, batch_images):
+def get_batch_predictions(config, batch_joints, batch_fields, batch_bc, batch_centers, batch_scales, batch_images):
+    
     heatmap_width, heatmap_height = config.MODEL.EXTRA.HEATMAP_SIZE
     num_joints = config.MODEL.NUM_JOINTS
 
     batch_predictions = []
 
-    for pred, center, scale, image_path in zip(batch, batch_centers, batch_scales, batch_images):
-        pred_tr = pred.transpose(1,2,0)
+    for im_hm, im_fields, im_bc, center, scale, image_path in zip(batch_joints, batch_fields, batch_bc, batch_centers, batch_scales, batch_images):
         
-        hm = pred_tr[...,:num_joints]
-        fields = pred_tr[...,num_joints:-1]
-        bc = pred_tr[...,-1]
+        hm = im_hm.transpose(1,2,0)
+        fields = im_fields.transpose(1,2,0)
+        bc = np.squeeze(im_bc)
 
         image_predictions = _get_image_predictions(hm, fields, bc)
 
         # Transform to full image size and add image path metadata
         for sk in image_predictions:
-            sk.joints[:, :2] = transform_preds(sk.joints[:, :2], center, scale, [heatmap_width, heatmap_height])
+            sk.joints[:, :2] = transform_preds(sk.joints[:, :2], center, scale, [heatmap_width, heatmap_height], max(config.MODEL.IMAGE_SIZE))
             sk.area = compute_area(sk.joints,sk.indices)
             sk.image_path = image_path
 

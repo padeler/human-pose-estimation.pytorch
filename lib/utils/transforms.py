@@ -46,26 +46,25 @@ def fliplr_joints(joints, joints_vis, width, matched_parts):
     return joints*joints_vis, joints_vis
 
 
-def transform_preds(coords, center, scale, output_size):
+def transform_preds(coords, center, scale, output_size, scale_factor):
     target_coords = np.zeros(coords.shape)
-    trans = get_affine_transform(center, scale, 0, output_size, inv=1)
+    trans = get_affine_transform(center, scale, 0, output_size, scale_factor, inv=1)
     for p in range(coords.shape[0]):
         target_coords[p, :2] = affine_transform(coords[p, :2], trans)
 
     return target_coords
 
 
-def get_affine_transform(center,
-                         scale,
-                         rot,
-                         output_size,
+def get_affine_transform(center, scale, rot,
+                         output_size, scale_factor,
                          shift=np.array([0, 0], dtype=np.float32),
                          inv=0):
     if not isinstance(scale, np.ndarray) and not isinstance(scale, list):
         print(scale)
         scale = np.array([scale, scale])
 
-    scale_tmp = scale * 200.0
+    scale_tmp = scale * scale_factor
+
     src_w = scale_tmp[0]
     dst_w = output_size[0]
     dst_h = output_size[1]

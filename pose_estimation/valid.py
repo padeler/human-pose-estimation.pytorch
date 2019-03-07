@@ -25,7 +25,7 @@ import _init_paths
 from core.config import config
 from core.config import update_config
 from core.config import update_dir
-from core.loss import JointsMSELoss
+from core.loss import JointsMSELoss, FieldsLoss
 from core.function import validate
 from utils.utils import create_logger
 
@@ -131,9 +131,12 @@ def main():
         model.load_state_dict(torch.load(model_state_file))
 
     # define loss function (criterion) and optimizer
-    criterion = JointsMSELoss(
-        use_target_weight=config.LOSS.USE_TARGET_WEIGHT
-    ).cuda()
+    joints_criterion = JointsMSELoss(use_target_weight=config.LOSS.USE_TARGET_WEIGHT).cuda()
+    fields_criterion = FieldsLoss().cuda()
+    bc_criterion = JointsMSELoss(use_target_weight=False).cuda()
+
+    criteria = (joints_criterion, fields_criterion, bc_criterion)
+
 
     # Data loading code
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
@@ -157,7 +160,7 @@ def main():
     )
 
     # evaluate on validation set
-    validate(config, valid_loader, valid_dataset, model, criterion,
+    validate(config, valid_loader, valid_dataset, model, criteria,
              final_output_dir, tb_log_dir)
 
 

@@ -27,7 +27,7 @@ from core.config import config
 from core.config import update_config
 from core.config import update_dir
 from core.config import get_model_name
-from core.loss import JointsMSELoss
+from core.loss import JointsMSELoss, FieldsLoss
 from core.function import train
 from core.function import validate
 from utils.utils import get_optimizer
@@ -132,9 +132,11 @@ def main():
         best_perf = chkpt_dict['perf']
 
     # define loss function (criterion) and optimizer
-    criterion = JointsMSELoss(
-        use_target_weight=config.LOSS.USE_TARGET_WEIGHT
-    ).cuda()
+    joints_criterion = JointsMSELoss(use_target_weight=config.LOSS.USE_TARGET_WEIGHT).cuda()
+    fields_criterion = FieldsLoss().cuda()
+    bc_criterion = JointsMSELoss(use_target_weight=False).cuda()
+
+    criteria = (joints_criterion, fields_criterion, bc_criterion)
 
     lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(
         optimizer, config.TRAIN.LR_STEP, config.TRAIN.LR_FACTOR
@@ -183,13 +185,13 @@ def main():
         lr_scheduler.step()
 
         # train for one epoch
-        train(config, train_loader, model, criterion, optimizer, epoch,
+        train(config, train_loader, model, criteria, optimizer, epoch,
               final_output_dir, tb_log_dir, writer_dict)
 
 
         # evaluate on validation set
         perf_indicator = validate(config, valid_loader, valid_dataset, model,
-                                  criterion, final_output_dir, tb_log_dir,
+                                  criteria, final_output_dir, tb_log_dir,
                                   writer_dict)
 
         if perf_indicator > best_perf:

@@ -27,28 +27,37 @@ from utils.skeleton_tools import get_batch_predictions
 logger = logging.getLogger(__name__)
 
 
-def train(config, train_loader, model, criterion, optimizer, epoch,
+def train(config, train_loader, model, criteria, optimizer, epoch,
           output_dir, tb_log_dir, writer_dict):
     batch_time = AverageMeter()
     data_time = AverageMeter()
     losses = AverageMeter()
     acc = AverageMeter()
 
+
+    joints_cr, fields_cr, bc_cr = criteria
+
     # switch to train mode
     model.train()
 
     end = time.time()
-    for i, (input, gt_target, weights, meta) in enumerate(train_loader):
+    for i, (input, gt_joints, gt_fields, gt_bc, weights, meta) in enumerate(train_loader):
         # measure data loading time
         data_time.update(time.time() - end)
 
         # compute output
-        output = model(input)
-        gt_target = gt_target.cuda(non_blocking=True)
+        joints, fields, bc = model(input)
+        gt_joints = gt_joints.cuda(non_blocking=True)
+        gt_fields = gt_fields.cuda(non_blocking=True)
+        gt_bc = gt_bc.cuda(non_blocking=True)
         weights = weights.cuda(non_blocking=True)
         
 
-        loss = criterion(output, gt_target, weights)
+        joints_loss = joints_cr(joints, gt_joints, weights)
+        fields_loss = fields_cr(fields, gt_fields, weights)
+        bc_loss = bc_cr(bc, gt_bc, weights)
+
+        loss = joints_loss + fields_loss + bc_loss
 
         # compute gradient and do update step
         optimizer.zero_grad()
@@ -58,8 +67,8 @@ def train(config, train_loader, model, criterion, optimizer, epoch,
         # measure accuracy and record loss
         losses.update(loss.item(), input.size(0))
 
-        _, avg_acc, cnt, pred = accuracy(output.detach().cpu().numpy(),
-                                         gt_target.detach().cpu().numpy(),
+        _, avg_acc, cnt, pred = accuracy(joints.detach().cpu().numpy(),
+                                         gt_joints.detach().cpu().numpy(),
                                          hm_type=config.MODEL.EXTRA.TARGET_TYPE)
         acc.update(avg_acc, cnt)
 
@@ -85,16 +94,21 @@ def train(config, train_loader, model, criterion, optimizer, epoch,
             writer.add_scalar('train_acc', acc.val, global_steps)
             writer_dict['train_global_steps'] = global_steps + 1
 
-            prefix = '{}_{}'.format(os.path.join(output_dir, 'train'), i)
-            save_debug_images(config, input, meta, gt_target, pred*4, output,
-                              prefix)
+            prefix = '{}_{}'.format(os.path.join(output_dir, 'train_joints'), i)
+            save_debug_images(config, input, meta, gt_joints, pred*4, joints, prefix)
+            prefix = '{}_{}'.format(os.path.join(output_dir, 'train_fields'), i)
+            save_debug_images(config, input, meta, gt_fields, pred*4, fields, prefix)
+            prefix = '{}_{}'.format(os.path.join(output_dir, 'train_bc'), i)
+            save_debug_images(config, input, meta, gt_bc, pred*4, bc, prefix)
 
 
-def validate(config, val_loader, val_dataset, model, criterion, output_dir,
+def validate(config, val_loader, val_dataset, model, criteria, output_dir,
              tb_log_dir, writer_dict=None):
     batch_time = AverageMeter()
     losses = AverageMeter()
     acc = AverageMeter()
+
+    joints_cr, fields_cr, bc_cr = criteria
 
     # switch to evaluate mode
     model.eval()
@@ -103,9 +117,10 @@ def validate(config, val_loader, val_dataset, model, criterion, output_dir,
     idx = 0
     with torch.no_grad():
         end = time.time()
-        for i, (input, jointsbc, jointsbc_weight, meta) in enumerate(val_loader):
+        for i, (input, gt_joints, gt_fields, gt_bc, weights, meta) in enumerate(val_loader):
             # compute output
-            output = model(input)
+            joints, fields, bc = model(input)
+
             if config.TEST.FLIP_TEST:
                 # this part is ugly, because pytorch has not supported negative index
                 raise NotImplementedError("This is not implemented for pose_resnet_bc")
@@ -125,16 +140,22 @@ def validate(config, val_loader, val_dataset, model, criterion, output_dir,
 
                 # output = (output + output_flipped) * 0.5
 
-            jointsbc = jointsbc.cuda(non_blocking=True)
-            jointsbc_weight = jointsbc_weight.cuda(non_blocking=True)
+            gt_joints = gt_joints.cuda(non_blocking=True)
+            gt_fields = gt_fields.cuda(non_blocking=True)
+            gt_bc = gt_bc.cuda(non_blocking=True)
+            weights = weights.cuda(non_blocking=True)
 
-            loss = criterion(output, jointsbc, jointsbc_weight)
+            joints_loss = joints_cr(joints, gt_joints, weights)
+            fields_loss = fields_cr(fields, gt_fields, weights)
+            bc_loss = bc_cr(bc, gt_bc, weights)
+
+            loss = joints_loss + fields_loss + bc_loss
             
             num_images = input.size(0)
             # measure accuracy and record loss
             losses.update(loss.item(), num_images)
-            _, avg_acc, cnt, pred = accuracy(output.cpu().numpy(),
-                                             jointsbc.cpu().numpy(),
+            _, avg_acc, cnt, pred = accuracy(joints.cpu().numpy(),
+                                             gt_joints.cpu().numpy(),
                                              hm_type=config.MODEL.EXTRA.TARGET_TYPE)
 
             acc.update(avg_acc, cnt)
@@ -148,7 +169,10 @@ def validate(config, val_loader, val_dataset, model, criterion, output_dir,
             batch_images = meta['image']
             # score = meta['score'].numpy()
 
-            batch_predictions = get_batch_predictions(config, output.clone().cpu().numpy(), c, s, batch_images)
+            batch_predictions = get_batch_predictions(config, joints.clone().cpu().numpy(), 
+                                                              fields.clone().cpu().numpy(), 
+                                                              bc.clone().cpu().numpy(), 
+                                                              c, s, batch_images)
 
             all_preds.extend(batch_predictions)
 
@@ -161,9 +185,13 @@ def validate(config, val_loader, val_dataset, model, criterion, output_dir,
                           loss=losses, acc=acc)
                 logger.info(msg)
 
-                prefix = '{}_{}'.format(os.path.join(output_dir, 'val'), i)
-                save_debug_images(config, input, meta, jointsbc, pred*4, output,
-                                  prefix)
+                prefix = '{}_{}'.format(os.path.join(output_dir, 'val_joints'), i)
+                save_debug_images(config, input, meta, gt_joints, pred*4, joints, prefix)
+                prefix = '{}_{}'.format(os.path.join(output_dir, 'val_fields'), i)
+                save_debug_images(config, input, meta, gt_fields, pred*4, fields, prefix)
+                prefix = '{}_{}'.format(os.path.join(output_dir, 'val_bc'), i)
+                save_debug_images(config, input, meta, gt_bc, pred*4, bc, prefix)
+
 
         name_values, perf_indicator = val_dataset.evaluate( config, all_preds, output_dir)
 

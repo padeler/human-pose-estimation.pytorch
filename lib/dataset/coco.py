@@ -187,6 +187,7 @@ class COCODataset(JointsDataset):
                 'filename': '',
                 'imgnum': 0,
                 'img_index': index,
+                'ann_id': obj['id'],
             })
 
         return rec

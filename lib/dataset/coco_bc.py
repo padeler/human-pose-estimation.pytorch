@@ -134,17 +134,20 @@ class COCOBCDataset(COCODataset):
         height, width = data_numpy.shape[:2]
 
         # each entry has multiple annotations. 
-        # XXX Pick one randomly for augmentation center
-        # pos = random.randint(0,len(db_rec['annotations'])-1)
-        # sel_ann = db_rec['annotations'][pos]
-        # c = sel_ann['center']
-        # s = sel_ann['scale']
-        # s[0] = max(1.0,s[0]) # dont allow too match zoom in suBjects
-        # s[1] = max(1.0,s[1])
+        # if self.is_train:
+        #     # XXX Pick one randomly for augmentation center
+        #     pos = random.randint(0,len(db_rec['annotations'])-1)
+        #     sel_ann = db_rec['annotations'][pos]
+        #     c = sel_ann['center']
+        #     s = sel_ann['scale']
+        #     # s[0] = max(1.0,s[0]) # dont allow too match zoom in suBjects
+        #     # s[1] = max(1.0,s[1])
 
-        # XXX Full image 
+        # else:
+        # # XXX Full image 
         c = np.array([width/2.,height/2.], dtype=np.float32)
-        s = np.array([width/self.image_width, height/self.image_height], dtype=np.float32)
+        sf = max(width, height)/max(self.image_size)
+        s = np.array([sf, sf], dtype=np.float32)
 
         r = 0
 
@@ -157,7 +160,7 @@ class COCOBCDataset(COCODataset):
 
 
         
-        trans = get_affine_transform(c, s, r, self.image_size)
+        trans = get_affine_transform(c, s, r, self.image_size, max(self.image_size))
         input = cv2.warpAffine(
             data_numpy,
             trans,
@@ -181,36 +184,25 @@ class COCOBCDataset(COCODataset):
                 'joints_vis':joints_vis,
             })
 
+
         joints, fields, bc, joints_weight = self.generate_target(annotations_meta)
         
-        target = np.zeros((self.num_joints*3 + 1,
-                            self.heatmap_size[1],
-                            self.heatmap_size[0]),
-                            dtype=np.float32)
-
-        target[:self.num_joints,...] = joints
-        target[self.num_joints:-1,...] = fields
-        target[-1,...] = bc
-
-        target_weight = np.zeros((self.num_joints*3+1, 1), dtype=np.float32)
-        target_weight[:self.num_joints,...] = joints_weight
-        target_weight[self.num_joints:-1,...] = joints_weight.repeat(2,axis=0)
-        if np.sum(joints_weight)>0:
-            target_weight[-1,0] = 1
-
-        target = torch.from_numpy(target)
-        target_weight = torch.from_numpy(target_weight)
+        joints = torch.from_numpy(joints)
+        fields = torch.from_numpy(fields)
+        bc     = torch.from_numpy(bc)
+        joints_weight = torch.from_numpy(joints_weight)
         
         meta = {
             'image': image_file,
             'annotations': annotations_meta,
+            'num_pred': len(annotations_meta),
             'center': c,
             'scale': s,
             'rotation': r,
             'flip': flip,
         }
 
-        return input, target, target_weight, meta
+        return input, joints, fields, bc, joints_weight, meta
 
     def generate_heatmaps_for_annotation(self,p):
         joints = p['joints']
@@ -319,10 +311,10 @@ class COCOBCDataset(COCODataset):
                 # mask fields using the heatmaps
                 hm_mask = heatmaps>0.25
                 for j in range(self.num_joints):
-                    fields[2*j] *= hm_mask[j]
-                    fields[2*j+1] *= hm_mask[j]
+                    target_fields[2*j][hm_mask[j]] = fields[2*j][hm_mask[j]]
+                    target_fields[2*j+1][hm_mask[j]] = fields[2*j+1][hm_mask[j]]
 
-                target_fields += fields
+                # target_fields[hm_mask] = fields[hm_mask]
 
 
         joints_weight[joints_weight>0] = 1
